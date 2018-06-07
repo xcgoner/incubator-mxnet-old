@@ -27,6 +27,7 @@ from train.metric import MultiBoxMetric
 from evaluate.eval_metric import MApMetric, VOC07MApMetric
 from config.config import cfg
 from symbol.symbol_factory import get_symbol_train
+# import mpi_collectives as mpi
 
 def convert_pretrained(name, args):
     """
@@ -46,7 +47,7 @@ def convert_pretrained(name, args):
     return args
 
 def get_lr_scheduler(learning_rate, lr_refactor_step, lr_refactor_ratio,
-                     num_example, batch_size, begin_epoch):
+                     num_example, batch_size, begin_epoch, kv_store, kv):
     """
     Compute learning rate and refactor scheduler
 
@@ -76,6 +77,11 @@ def get_lr_scheduler(learning_rate, lr_refactor_step, lr_refactor_ratio,
     else:
         lr = learning_rate
         epoch_size = num_example // batch_size
+        if 'dist' in kv_store:
+            epoch_size /= kv.num_workers
+            # lr *= kv.num_workers
+            lr *= (1.0 + float(kv.num_workers)/4)
+            logging.getLogger().info("Adjusted learning rate to {} for distributed training".format(lr))
         for s in iter_refactor:
             if begin_epoch >= s:
                 lr *= lr_refactor_ratio
@@ -89,7 +95,7 @@ def get_lr_scheduler(learning_rate, lr_refactor_step, lr_refactor_ratio,
 
 def train_net(net, train_path, num_classes, batch_size,
               data_shape, mean_pixels, resume, finetune, pretrained, epoch,
-              prefix, ctx, begin_epoch, end_epoch, frequent, learning_rate,
+              prefix, ctx, begin_epoch, end_epoch, frequent, kv_store, learning_rate,
               momentum, weight_decay, lr_refactor_step, lr_refactor_ratio,
               freeze_layer_pattern='',
               num_example=10000, label_pad_width=350,
@@ -166,10 +172,17 @@ def train_net(net, train_path, num_classes, batch_size,
     log_file : str
         log to file if enabled
     """
+
+    kv = mx.kvstore.create(kv_store)
+    # if args.gc_type != 'none':
+    #     kv.set_gradient_compression({'type': args.gc_type,
+    #                                  'threshold': args.gc_threshold})
+
     # set up logger
-    logging.basicConfig()
+    head = '%(asctime)-15s Node[' + str(kv.rank) + '] %(message)s'
+    logging.basicConfig(format=head)
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     if log_file:
         fh = logging.FileHandler(log_file)
         logger.addHandler(fh)
@@ -239,17 +252,19 @@ def train_net(net, train_path, num_classes, batch_size,
     mod = mx.mod.Module(net, label_names=('label',), logger=logger, context=ctx,
                         fixed_param_names=fixed_param_names)
 
+
     # fit parameters
     batch_end_callback = mx.callback.Speedometer(train_iter.batch_size, frequent=frequent)
     epoch_end_callback = mx.callback.do_checkpoint(prefix)
     learning_rate, lr_scheduler = get_lr_scheduler(learning_rate, lr_refactor_step,
-        lr_refactor_ratio, num_example, batch_size, begin_epoch)
+        lr_refactor_ratio, num_example, batch_size, begin_epoch, kv_store, kv)
+    epoch_size = num_example / batch_size / kv.num_workers
     optimizer_params={'learning_rate':learning_rate,
                       'momentum':momentum,
                       'wd':weight_decay,
                       'lr_scheduler':lr_scheduler,
                       'clip_gradient':None,
-                      'rescale_grad': 1.0 / len(ctx) if len(ctx) > 0 else 1.0 }
+                      'rescale_grad': 1.0 / len(ctx) if len(ctx) > 0 else 1.0}
     monitor = mx.mon.Monitor(iter_monitor, pattern=monitor_pattern) if iter_monitor > 0 else None
 
     # run fit net, every n epochs we run evaluation network to get mAP
@@ -264,6 +279,7 @@ def train_net(net, train_path, num_classes, batch_size,
             validation_metric=valid_metric,
             batch_end_callback=batch_end_callback,
             epoch_end_callback=epoch_end_callback,
+            kvstore = kv, 
             optimizer='sgd',
             optimizer_params=optimizer_params,
             begin_epoch=begin_epoch,

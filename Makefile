@@ -344,13 +344,14 @@ PROTOBUF_DIR=$(ROOTDIR)/deps
 PROTOC=$(PROTOBUF_DIR)/bin/protoc
 COLL_PATH=$(ROOTDIR)/src/kvstore/collectives
 PROTO_GEN_FILE=src/kvstore/collectives/src/mpi_message.pb.cc
-DEF_MPI_PATH=$(ROOTDIR)/3rdparty/mpich
+DEF_MPI_PATH=$(ROOTDIR)/3rdparty/openmpi
 ifeq ($(USE_DIST_KVSTORE), 1)
 ifeq ($(USE_ALLREDUCE_DIST_KVSTORE), 1)
 	ifeq ($(MPI_ROOT),)
   	# Default mpi
-		MPI_ROOT := $(shell ./prepare_mpi.sh $(DEF_MPI_PATH))
+		MPI_ROOT := $(shell ./prepare_openmpi.sh $(DEF_MPI_PATH))
 	endif
+#  CFLAGS += -D__LP64__ 
  CFLAGS += -DMXNET_USE_ALLREDUCE_DIST_KVSTORE=1 -I$(MPI_ROOT)/include -I$(PROTOBUF_DIR)/include -I$(COLL_PATH)/include -I$(COLL_PATH)/src
  LDFLAGS += -L$(MPI_ROOT)/lib -Wl,-rpath=$(MPI_ROOT)/lib -lmpi
  LDFLAGS += -L$(PROTOBUF_DIR)/lib -Wl,-rpath=$(PROTOBUF_DIR)/lib -lprotobuf

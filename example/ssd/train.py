@@ -34,6 +34,8 @@ def parse_args():
                         default="", type=str)
     parser.add_argument('--network', dest='network', type=str, default='vgg16_reduced',
                         help='which network to use')
+    parser.add_argument('--kv-store', type=str, default='device',
+                       help='key-value store type')
     parser.add_argument('--batch-size', dest='batch_size', type=int, default=32,
                         help='training batch size')
     parser.add_argument('--resume', dest='resume', type=int, default=-1,
@@ -134,7 +136,7 @@ if __name__ == '__main__':
               args.data_shape, [args.mean_r, args.mean_g, args.mean_b],
               args.resume, args.finetune, args.pretrained,
               args.epoch, args.prefix, ctx, args.begin_epoch, args.end_epoch,
-              args.frequent, args.learning_rate, args.momentum, args.weight_decay,
+              args.frequent, args.kv_store, args.learning_rate, args.momentum, args.weight_decay,
               args.lr_refactor_step, args.lr_refactor_ratio,
               val_path=args.val_path,
               num_example=args.num_example,

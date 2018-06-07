@@ -372,6 +372,20 @@ class KVStore(object):
                     self.handle, mx_uint(len(ckeys)), ckeys, cinvals,
                     coutvals, ctypes.c_int(priority)))
         else:
+            # ckeys, cvals, use_str_keys = _ctype_key_value(key, ins)
+            # if use_str_keys:
+            #     check_call(_LIB.MXKVStorePushEx(
+            #         self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+            # else:
+            #     check_call(_LIB.MXKVStorePush(
+            #         self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+            # ckeys, cvals, use_str_keys = _ctype_key_value(key, outs)
+            # if use_str_keys:
+            #     check_call(_LIB.MXKVStorePullEx(
+            #         self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+            # else:
+            #     check_call(_LIB.MXKVStorePull(
+            #         self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
             raise Exception("This api is not supported for kvstore with type %s. \
                              Please use push and pull instead."%self.type)
 
