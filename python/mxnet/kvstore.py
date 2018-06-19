@@ -230,8 +230,8 @@ class KVStore(object):
         <RowSparseNDArray 2x3 @cpu(0)>
         """
         # debugging
-        print('[{}] push: key: {}, val: {}'.format(self.rank, key, value))
-
+        # print('[{}] push: key: {}, val: {}'.format(self.rank, key, value))
+        
         if self.type != 'dist_sync_allreduce':
             ckeys, cvals, use_str_keys = _ctype_key_value(key, value)
             if use_str_keys:
@@ -320,9 +320,9 @@ class KVStore(object):
         else:
             raise Exception("This api is not supported for kvstore with type %s. \
                              Please use pushpull instead."%self.type)
-
+                             
         # debugging
-        print('[{}] pull: key: {}, val: {}'.format(self.rank, key, out))
+        # print('[{}] pull: key: {}, val: {}'.format(self.rank, key, out))
 
     def pushpull(self, key, ins, outs, priority=0):
         """ allreduce a single or a sequence of key-value pairs from all nodes.

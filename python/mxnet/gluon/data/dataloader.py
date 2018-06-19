@@ -256,7 +256,7 @@ class DataLoader(object):
     """
     def __init__(self, dataset, batch_size=None, shuffle=False, sampler=None,
                  last_batch=None, batch_sampler=None, batchify_fn=None,
-                 num_workers=0):
+                 num_workers=0, kv_num_workers=1, kv_rank=None):
         self._dataset = dataset
 
         if batch_sampler is None:
@@ -265,7 +265,10 @@ class DataLoader(object):
                                  "batch_sampler is specified")
             if sampler is None:
                 if shuffle:
-                    sampler = _sampler.RandomSampler(len(dataset))
+                    # sampler = _sampler.RandomSampler(len(dataset))
+                    print('Using different subset on different workers')
+                    print('num_workers=', kv_num_workers)
+                    sampler = _sampler.RandomPermuteSampler(len(dataset), kv_num_workers, kv_rank)
                 else:
                     sampler = _sampler.SequentialSampler(len(dataset))
             elif shuffle:

@@ -72,6 +72,37 @@ class RandomSampler(Sampler):
     def __len__(self):
         return self._length
 
+class RandomPermuteSampler(Sampler):
+    """Samples elements from [0, length) randomly without replacement.
+
+    Parameters
+    ----------
+    length : int
+        Length of the sequence.
+    """
+    def __init__(self, length, kv_num_workers=1, kv_rank=None):
+        self._length = length
+        self._kv_num_workers = kv_num_workers
+        self._kv_rank=kv_rank
+
+    def __iter__(self):
+        if self._kv_num_workers > 1 and self._kv_rank is not None:
+            indices = np.arange(self._kv_rank, self._length, self._kv_num_workers)
+        else:
+            indices = np.arange(self._length)
+        np.random.shuffle(indices)
+        # if self._kv_num_workers > 1 and self._kv_rank is not None:
+        #     indices = np.arange(self._length)
+        #     np.random.shuffle(indices)
+        #     indices = indices[self._kv_rank:self._length:self._kv_num_workers]
+        # else:
+        #     indices = np.arange(self._length)
+        #     np.random.shuffle(indices)
+        
+        return iter(indices)
+
+    def __len__(self):
+        return self._length
 
 class BatchSampler(Sampler):
     """Wraps over another `Sampler` and return mini-batches of samples.

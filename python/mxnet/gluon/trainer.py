@@ -152,6 +152,14 @@ class Trainer(object):
         else:
             return self._optimizer.learning_rate
 
+    @property
+    def momentum(self):
+        if not isinstance(self._optimizer, opt.Optimizer):
+            raise UserWarning("Optimizer has to be defined before its learning "
+                              "rate can be accessed.")
+        else:
+            return self._optimizer.momentum
+
     def set_learning_rate(self, lr):
         """Sets a new learning rate of the optimizer.
 
@@ -165,6 +173,20 @@ class Trainer(object):
                               "rate is mutated.")
         else:
             self._optimizer.set_learning_rate(lr)
+    
+    def set_momentum(self, momentum):
+        """Sets a new momentum of the optimizer.
+
+        Parameters
+        ----------
+        momentum : float
+            The new momentum of the optimizer.
+        """
+        if not isinstance(self._optimizer, opt.Optimizer):
+            raise UserWarning("Optimizer has to be defined before its learning "
+                              "rate is mutated.")
+        else:
+            self._optimizer.momentum = momentum
 
     def step(self, batch_size, ignore_stale_grad=False):
         """Makes one step of parameter update. Should be called after
