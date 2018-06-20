@@ -247,6 +247,7 @@ class KVStoreNCCL : public KVStoreLocal {
 
       auto& buf = merge_buf_[key];
       int root = buf.merged.ctx().dev_id;
+      // root_idx: the index of the src ndarray whose ctx matches root
       root_id = FindRootId(src, root);
 
       auto& reduce = buf.merged;

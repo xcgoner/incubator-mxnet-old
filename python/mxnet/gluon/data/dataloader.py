@@ -258,6 +258,13 @@ class DataLoader(object):
                  last_batch=None, batch_sampler=None, batchify_fn=None,
                  num_workers=0, kv_num_workers=1, kv_rank=None):
         self._dataset = dataset
+        # assume the batch can be evenly assigned
+        if kv_num_workers > 1:
+            self._slice_start = kv_rank * batch_size / kv_num_workers
+            self._slice_end = self._slice_start + batch_size / kv_num_workers
+        else:
+            self._slice_start = 0
+            self._slice_end = batch_size
 
         if batch_sampler is None:
             if batch_size is None:
@@ -265,10 +272,10 @@ class DataLoader(object):
                                  "batch_sampler is specified")
             if sampler is None:
                 if shuffle:
-                    # sampler = _sampler.RandomSampler(len(dataset))
-                    print('Using different subset on different workers')
-                    print('num_workers=', kv_num_workers)
-                    sampler = _sampler.RandomPermuteSampler(len(dataset), kv_num_workers, kv_rank)
+                    sampler = _sampler.RandomSampler(len(dataset))
+                    # print('Using different subset on different workers')
+                    # print('num_workers=', kv_num_workers)
+                    # sampler = _sampler.RandomPermuteSampler(len(dataset), kv_num_workers, kv_rank)
                 else:
                     sampler = _sampler.SequentialSampler(len(dataset))
             elif shuffle:
@@ -293,11 +300,12 @@ class DataLoader(object):
 
     def __iter__(self):
         if self._num_workers == 0:
-            generator = lambda: [(yield self._batchify_fn([self._dataset[idx] for idx in batch]))
+            generator = lambda: [(yield self._batchify_fn([self._dataset[idx[self._slice_start:self._slice_end]] for idx in batch]))
                                  for batch in self._batch_sampler]
             return generator()
 
         # multi-worker
+        # TODO: kvstore, multiple workers
         return _MultiWorkerIter(self._num_workers, self._dataset,
                                 self._batchify_fn, self._batch_sampler)
 
