@@ -62,6 +62,28 @@ int MXCOLLIBInit();
 int MXGetLocalRank(int *ret);
 
 /*!
+ * \brief Return the key for allreduce/broadcast
+ * \param keys the list of keys.
+ * \param key the specific key
+ * \param idx the index of the key in keys
+ * \param is_broadcast 1 if broadcast, 0 if allreduce
+ * \return string key for mpi allreduce/broadcast
+ */
+std::string MXGetMpiKey(const std::vector<int> &keys,
+                       const int key,
+                       const int idx,
+                       bool is_broadcast);
+
+void MXAllReduce_(const std::string &key,
+                  mxnet::NDArray &comm_buf,
+                  int priority);
+
+void MXBroadcast_(const std::string &key,
+                  mxnet::NDArray &comm_buf,
+                  int root_rank,
+                  int priority);
+
+/*!
  * \brief Do Allreduce across the multi-node.
  * \param keys the list of keys.
  * \param in_values the list of input values.

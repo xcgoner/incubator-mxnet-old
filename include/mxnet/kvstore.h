@@ -194,11 +194,9 @@ class KVStore {
    * \param priority Priority of the action
    */
   virtual void PushPull(const std::vector<int> &keys,
-                        const std::vector<NDArray*> &in_values,
+                        const std::vector<NDArray> &in_values,
                         const std::vector<NDArray*> &out_values,
-                        int priority = 0) {
-      LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
-    }
+                        int priority = 0) = 0;
 
   /*!
    * \brief push and pull a list of key-value pairs from the all the nodes
@@ -210,11 +208,9 @@ class KVStore {
    * \param priority Priority of the action
    */
   virtual void PushPull(const std::vector<std::string> &str_keys,
-                        const std::vector<NDArray*> &in_values,
+                        const std::vector<NDArray> &in_values,
                         const std::vector<NDArray*> &out_values,
-                        int priority = 0) {
-      LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
-    }
+                        int priority = 0) = 0;
 
   /*!
    * \brief broadcast a list of key-value pairs from root_rank node to all other nodes
@@ -227,9 +223,7 @@ class KVStore {
   virtual void Broadcast(const std::vector<int> &keys,
                          const std::vector<NDArray*> &values,
                          int root_rank,
-                         int priority = 0) {
-      LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
-    }
+                         int priority = 0) = 0;
 
   /*!
    * \brief broadcast a list of key-value pairs from root_rank node to all other nodes
@@ -242,9 +236,7 @@ class KVStore {
   virtual void Broadcast(const std::vector<std::string> &str_keys,
                          const std::vector<NDArray*> &values,
                          int root_rank,
-                         int priority = 0) {
-      LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
-    }
+                         int priority = 0) = 0;
 
   /*!
    * \brief pull a list of key-value pairs from the store.

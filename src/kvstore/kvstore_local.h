@@ -106,6 +106,22 @@ class KVStoreLocal : public KVStore {
     PullImpl(keys, values, priority);
   }
 
+  void PushPull(const std::vector<int>& keys,
+            const std::vector<NDArray>& invals,
+            const std::vector<NDArray*>& outvals,
+            int priority) override {
+    SetKeyType(kIntKey);
+    PushPullImpl(keys, invals, outvals, priority);
+  }
+
+  void Broadcast(const std::vector<int>& keys,
+            const std::vector<NDArray*>& values,
+            int root_rank,
+            int priority) override {
+    SetKeyType(kIntKey);
+    BroadcastImpl(keys, values, root_rank, priority);
+  }
+
   void PullRowSparse(const std::vector<int>& keys,
                      const std::vector<std::pair<NDArray*, NDArray>>& val_rowids,
                      int priority = 0) override {
@@ -129,6 +145,26 @@ class KVStoreLocal : public KVStore {
     std::vector<int> keys(str_keys.size());
     LookupKeys(str_keys, &keys);
     PullImpl(keys, values, priority);
+  }
+
+  void PushPull(const std::vector<std::string>& str_keys,
+            const std::vector<NDArray>& invals,
+            const std::vector<NDArray*>& outvals,
+            int priority) override {
+    SetKeyType(kStringKey);
+    std::vector<int> keys(str_keys.size());
+    LookupKeys(str_keys, &keys);
+    PushPullImpl(keys, invals, outvals, priority);
+  }
+
+  void Broadcast(const std::vector<std::string>& str_keys,
+            const std::vector<NDArray*>& values,
+            int root_rank,
+            int priority) override {
+    SetKeyType(kStringKey);
+    std::vector<int> keys(str_keys.size());
+    LookupKeys(str_keys, &keys);
+    BroadcastImpl(keys, values, root_rank, priority);
   }
 
   void PullRowSparse(const std::vector<std::string>& str_keys,
@@ -209,6 +245,22 @@ class KVStoreLocal : public KVStore {
       CHECK(!local.is_none()) << "key " << key << " has not been inited";
       comm_->Broadcast(key, local, grouped_vals[i], priority);
     }
+  }
+
+  virtual void PushPullImpl(const std::vector<int>& keys,
+                        const std::vector<NDArray>& invals,
+                        const std::vector<NDArray*>& outvals,
+                        int priority) {
+    PushImpl(keys, invals, priority);
+    PullImpl(keys, outvals, priority);
+  }
+
+  virtual void BroadcastImpl(const std::vector<int>& keys,
+                        const std::vector<NDArray*>& values,
+                        int root_rank,
+                        int priority) {
+    PullImpl(keys, values, priority);
+    // LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
   }
 
   virtual void PullRowSparseImpl(const std::vector<int>& keys,
@@ -350,6 +402,16 @@ class KVStoreLocal : public KVStore {
             << "key " << str_key << " doesn't exist. Did you init?";
       keys->at(i) = str_key_dict_[str_key];
     }
+  }
+
+  /**
+   * \brief check if the keys are all unique
+   */
+  void CheckUnique(const std::vector<int>& keys) {
+    auto keys_copy = keys;
+    auto last = std::unique(keys_copy.begin(), keys_copy.end());
+    CHECK_EQ(static_cast<size_t>(std::distance(keys_copy.begin(), last)),
+             static_cast<size_t>(keys.size()));
   }
 
   /*

@@ -668,6 +668,55 @@ int MXGetLocalRank(int *ret) {
   return -1;
 }
 
+void MXBroadcast_(const std::string &key,
+                  mxnet::NDArray &comm_buf,
+                  int root_rank,
+                  int priority) {
+  CollectiveOpRecord record;
+  record.key = key;
+  record.rank = coll_global.rank;
+  record.root_rank = root_rank;
+  record.val_in = &(comm_buf);
+  MXCOLL_DEBUG(coll_global.rank, "MXAllReduceImpl insert one record key [%s]!\n",
+              record.key.c_str());
+
+  auto broadcast_async_fn = [record]
+  (mxnet::RunContext rctx, mxnet::Engine::CallbackOnComplete cb) {
+    EnqueueCollective(record, MPIRequest::BROADCAST, cb);
+  };
+  CHECK_NOTNULL(mxnet::Engine::Get())->PushAsync(
+    broadcast_async_fn,
+    coll_global.pinned_ctx,
+    {},
+    {record.val_in->var()},
+    mxnet::FnProperty::kNormal,
+    priority, "KVSTORE BROADCAST");
+}
+
+void MXAllReduce_(const std::string &key,
+                  mxnet::NDArray &comm_buf,
+                  int priority) {
+  CollectiveOpRecord record;
+  record.key = key;
+  record.rank = coll_global.rank;
+  record.val_in = &(comm_buf);
+  record.val_out = &(comm_buf);
+  MXCOLL_DEBUG(coll_global.rank, "MXAllReduceImpl insert one record key [%s]!\n",
+              record.key.c_str());
+
+  auto all_reduce_async_fn = [record]
+  (mxnet::RunContext rctx, mxnet::Engine::CallbackOnComplete cb) {
+    EnqueueCollective(record, MPIRequest::ALLREDUCE, cb);
+  };
+  CHECK_NOTNULL(mxnet::Engine::Get())->PushAsync(
+    all_reduce_async_fn,
+    coll_global.pinned_ctx,
+    {},
+    {record.val_out->var()},
+    mxnet::FnProperty::kNormal,
+    priority, "KVSTORE PUSHPULL");
+}
+
 int MXAllReduceImpl(const std::vector<std::string> &v_keys,
                     const std::vector<mxnet::NDArray*> &v_invals,
                     const std::vector<mxnet::NDArray*> &v_outvals,
@@ -705,6 +754,27 @@ int MXAllReduceImpl(const std::vector<std::string> &v_keys,
     }
   }
   return 0;
+}
+
+std::string MXGetMpiKey(const std::vector<int> &keys,
+                       const int key,
+                       const int idx,
+                       bool is_broadcast) {
+  std::string key_prefix  = INT_PREFIX;
+  std::string idx_prefix  = IDX_PREFIX;
+  std::string delimiter   = DELIMITER;
+  std::string ops_prefix  = OPS_PREFIX;
+  std::string ops_type;
+  if (is_broadcast)
+    ops_type = OPS_BROADCAST;
+  else 
+    ops_type = OPS_ALLREDUCE;
+  std::string new_key;
+  size_t index = countIDX(keys, key, idx);
+  new_key = ops_prefix + delimiter + ops_type + delimiter +
+              key_prefix + delimiter + std::to_string(key) + delimiter +
+              idx_prefix + delimiter + std::to_string(index);
+  return new_key;
 }
 
 int MXAllReduce(const std::vector<int> &keys,

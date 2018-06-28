@@ -257,6 +257,21 @@ class KVStoreDist : public KVStoreLocal {
     }
   }
 
+  void BroadcastImpl(const std::vector<int>& keys,
+                const std::vector<NDArray*>& values,
+                int root_rank,
+                int priority) override {
+    LOG(WARNING) << "Broadcast is not supported in KVStore with type dist_sync.";
+  }
+
+  void PushPullImpl(const std::vector<int>& keys,
+                        const std::vector<NDArray>& invals,
+                        const std::vector<NDArray*>& outvals,
+                        int priority) {
+    PushImpl(keys, invals, priority);
+    PullImpl(keys, outvals, priority);
+  }
+
   void PullRowSparseImpl(const std::vector<int>& keys,
                          const std::vector<std::pair<NDArray*, NDArray>>& val_rowids,
                          int priority = 0) override {
@@ -499,16 +514,6 @@ class KVStoreDist : public KVStoreLocal {
       FnProperty::kNormal,
       priority,
       "KVStoreDistRowSparsePull");
-  }
-
-  /**
-   * \brief check if the keys are all unique
-   */
-  void CheckUnique(const std::vector<int>& keys) {
-    auto keys_copy = keys;
-    auto last = std::unique(keys_copy.begin(), keys_copy.end());
-    CHECK_EQ(static_cast<size_t>(std::distance(keys_copy.begin(), last)),
-             static_cast<size_t>(keys.size()));
   }
 
   /**
