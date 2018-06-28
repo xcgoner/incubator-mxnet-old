@@ -132,7 +132,9 @@ class Trainer(object):
                     kvstore.init(i, param_arrays[0])
                     kvstore.pull(i, param_arrays, priority=-i)
                 else:
+                    print('start broadcast')
                     kvstore.broadcast(i, param_arrays, 0, priority=-i)
+                    print('end broadcast')
                 # if i == 0:
                 #     print("after sync")
                 #     print(param_arrays)

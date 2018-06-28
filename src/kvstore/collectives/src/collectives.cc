@@ -376,7 +376,9 @@ void PerformCollectiveOp(NDArrayTable *ndarray_table, MPIResponse response) {
 }
 
 void BackgroundThreadLoop() {
+  LOG(INFO) << "MPI_Init";
   auto init_result = MPI_Init(NULL, NULL);
+  LOG(INFO) << "MPI_Init finished";
   if (init_result != MPI_SUCCESS) {
     coll_global.init_status = -1;
     LOG(FATAL) << "MPI_Initialization Failure!";
@@ -388,15 +390,19 @@ void BackgroundThreadLoop() {
   }
 
   int rank;
+  LOG(INFO) << "getting rank";
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   bool is_coordinator = rank == 0;
 
   int size;
+  LOG(INFO) << "getting size";
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
   MPI_Comm local_comm;
+  LOG(INFO) << "getting type";
   MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &local_comm);
   int local_rank;
+  LOG(INFO) << "getting local rank";
   MPI_Comm_rank(local_comm, &local_rank);
 
   coll_global.rank = rank;
@@ -404,7 +410,9 @@ void BackgroundThreadLoop() {
   coll_global.size = size;
   coll_global.initialization_done = true;
 
+  LOG(INFO) << "notifying";
   coll_global.cv.notify_all();
+  LOG(INFO) << "initialization notified";
 
   if (is_coordinator) {
     coll_global.message_table =
@@ -588,18 +596,20 @@ void BackgroundThreadLoop() {
 int InitializeMPIOnce(bool gpu) {
   if (coll_global.initialized_flag.test_and_set())
     return coll_global.init_status;
-
+  LOG(INFO) << "Initializing mpi";
   coll_global.device = -1;
   coll_global.pinned_ctx = mxnet::Context::CPUPinned(0);
 
   coll_global.background_thread = std::thread(BackgroundThreadLoop);
   std::unique_lock<std::mutex> lock(coll_global.mu);
+  LOG(INFO) << "waiting for initialization";
   coll_global.cv.wait(lock);
   if (!coll_global.initialization_done) {
     coll_global.init_status = -1;
   }
 
   MXCOLL_DEBUG(coll_global.rank, "MPI Initialization Done!\n");
+  LOG(INFO) << "MPI Initialization Done!";
   return coll_global.init_status;
 }
 

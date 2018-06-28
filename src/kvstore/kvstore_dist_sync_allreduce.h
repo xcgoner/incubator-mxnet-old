@@ -50,6 +50,7 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
  public:
   explicit KVStoreDistSyncAllReduce(bool use_device_comm)
      : KVStoreLocal(use_device_comm) {
+       LOG(INFO) << "Initializing kvstore";
     int ret = MXCOLLIBInit();
     if (ret != 0) {
       LOG(FATAL) << "kvstore with type [" << type_ << "] failed with collective library init";

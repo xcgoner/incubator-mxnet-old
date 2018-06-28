@@ -125,18 +125,21 @@ def default_mp_batchify_fn(data):
                         ctx=context.Context('cpu_shared', 0))
 
 
-def worker_loop(dataset, key_queue, data_queue, batchify_fn):
+def worker_loop(dataset, key_queue, data_queue, batchify_fn, slice_start, slice_end):
     """Worker loop for multiprocessing DataLoader."""
     while True:
         idx, samples = key_queue.get()
         if idx is None:
             break
-        batch = batchify_fn([dataset[i] for i in samples])
+        if slice_end-slice_start >= len(samples):
+            batch = batchify_fn([dataset[i] for i in samples])
+        else:
+            batch = batchify_fn([dataset[i] for i in samples[slice_start:slice_end]])
         data_queue.put((idx, batch))
 
 class _MultiWorkerIter(object):
     """Interal multi-worker iterator for DataLoader."""
-    def __init__(self, num_workers, dataset, batchify_fn, batch_sampler):
+    def __init__(self, num_workers, dataset, batchify_fn, batch_sampler, slice_start, slice_end):
         assert num_workers > 0, "_MultiWorkerIter is not for {} workers".format(num_workers)
         self._num_workers = num_workers
         self._dataset = dataset
@@ -154,7 +157,7 @@ class _MultiWorkerIter(object):
         for _ in range(self._num_workers):
             worker = multiprocessing.Process(
                 target=worker_loop,
-                args=(self._dataset, self._key_queue, self._data_queue, self._batchify_fn))
+                args=(self._dataset, self._key_queue, self._data_queue, self._batchify_fn, slice_start,slice_end))
             worker.daemon = True
             worker.start()
             workers.append(worker)
@@ -260,11 +263,11 @@ class DataLoader(object):
         self._dataset = dataset
         # assume the batch can be evenly assigned
         if kv_num_workers > 1:
-            self._slice_start = kv_rank * batch_size / kv_num_workers
-            self._slice_end = self._slice_start + batch_size / kv_num_workers
+            self._slice_start = int(kv_rank * (batch_size / kv_num_workers))
+            self._slice_end = int(self._slice_start + batch_size / kv_num_workers)
         else:
             self._slice_start = 0
-            self._slice_end = batch_size
+            self._slice_end = int(batch_size)
 
         if batch_sampler is None:
             if batch_size is None:
@@ -299,15 +302,15 @@ class DataLoader(object):
             self._batchify_fn = batchify_fn
 
     def __iter__(self):
-        if self._num_workers == 0:
-            generator = lambda: [(yield self._batchify_fn([self._dataset[idx[self._slice_start:self._slice_end]] for idx in batch]))
+        if self._num_workers <= 1:
+            generator = lambda: [(yield self._batchify_fn([self._dataset[idx] for idx in batch[self._slice_start:self._slice_end]]))
                                  for batch in self._batch_sampler]
             return generator()
 
         # multi-worker
         # TODO: kvstore, multiple workers
         return _MultiWorkerIter(self._num_workers, self._dataset,
-                                self._batchify_fn, self._batch_sampler)
+                                self._batchify_fn, self._batch_sampler, self._slice_start, self._slice_end)
 
     def __len__(self):
         return len(self._batch_sampler)
