@@ -133,6 +133,7 @@ class Trainer(object):
                     kvstore.pull(i, param_arrays, priority=-i)
                 else:
                     print('start broadcast')
+                    kvstore.init(i, param_arrays[0])
                     kvstore.broadcast(i, param_arrays, 0, priority=-i)
                     print('end broadcast')
                 # if i == 0:
@@ -275,7 +276,6 @@ class Trainer(object):
                 'update() when parameters are updated on kvstore ' \
                 'is not supported. Try setting `update_on_kvstore` ' \
                 'to False when creating trainer.'
-
         self._optimizer.rescale_grad = self._scale / batch_size
         self._update(ignore_stale_grad)
 

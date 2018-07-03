@@ -278,6 +278,7 @@ void PerformCollectiveOp(NDArrayTable *ndarray_table, MPIResponse response) {
   std::string coll_ops;
   if (response.response_type() == MPIResponse::ALLREDUCE) {
     coll_ops = OPS_ALLREDUCE;
+    LOG(INFO) << "mshadow::gpu::kDevMask = " << mshadow::gpu::kDevMask;
     if (dtype == mshadow::kFloat32) {
       switch (dev_in) {
         case mshadow::cpu::kDevMask: {
@@ -286,6 +287,7 @@ void PerformCollectiveOp(NDArrayTable *ndarray_table, MPIResponse response) {
         }
         case mshadow::gpu::kDevMask: {
 #if MXNET_USE_CUDA
+          LOG(INFO) << "Using gpu mpi allreduce";
           ret = COLL_Wrapper<mxnet::gpu, float>::AllReduce(input_array, output_array);
           break;
 #else

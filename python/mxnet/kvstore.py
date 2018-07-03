@@ -232,7 +232,7 @@ class KVStore(object):
         # debugging
         # print('[{}] push: key: {}, val: {}'.format(self.rank, key, value))
         
-        if self.type != 'dist_sync_allreduce':
+        if 'dist_sync_allreduce' not in self.type:
             ckeys, cvals, use_str_keys = _ctype_key_value(key, value)
             if use_str_keys:
                 check_call(_LIB.MXKVStorePushEx(
@@ -309,7 +309,7 @@ class KVStore(object):
         """
 
         assert(out is not None)
-        if self.type != 'dist_sync_allreduce':
+        if 'dist_sync_allreduce' not in self.type:
             ckeys, cvals, use_str_keys = _ctype_key_value(key, out)
             if use_str_keys:
                 check_call(_LIB.MXKVStorePullEx(
@@ -367,7 +367,7 @@ class KVStore(object):
         [[ 2.  2.  2.]
         [ 2.  2.  2.]]
         """
-        if self.type == 'dist_sync_allreduce':
+        if 'dist_sync_allreduce' in self.type:
             ckeys, cinvals, use_str_keys = _ctype_key_value(key, ins)
             ckeys, coutvals, use_str_keys = _ctype_key_value(key, outs)
             if use_str_keys:
@@ -429,7 +429,7 @@ class KVStore(object):
         >>> [[ 2.  2.  2.]
             [ 2.  2.  2.]]
         """
-        if self.type == 'dist_sync_allreduce':
+        if 'dist_sync_allreduce' in self.type:
             ckeys, cinvals, use_str_keys = _ctype_key_value(key, values)
             if use_str_keys:
                 check_call(_LIB.MXKVStoreBroadcastEx(
@@ -498,7 +498,7 @@ class KVStore(object):
         """
         assert(out is not None)
         assert(row_ids is not None)
-        if self.type == 'dist_sync_allreduce':
+        if 'dist_sync_allreduce' in self.type:
             raise Exception("This api is not supported for kvstore with type %s"%self.type)
         if isinstance(row_ids, NDArray):
             row_ids = [row_ids]
@@ -766,7 +766,7 @@ class KVStore(object):
         body : str
             the body of the command.
         """
-        if self.type == 'dist_sync_allreduce':
+        if 'dist_sync_allreduce' in self.type:
             raise Exception("This api is not supported for kvstore with type %s"%self.type)
         else:
             check_call(_LIB.MXKVStoreSendCommmandToServers(

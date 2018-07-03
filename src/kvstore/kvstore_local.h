@@ -343,8 +343,8 @@ class KVStoreLocal : public KVStore {
    */
   virtual void GroupKVPairsPullRsp(const std::vector<int>& keys,
                                    const std::vector<RSPVal>& values,
-                                   std::vector<int> *uniq_keys,
-                                   std::vector<std::vector<RSPVal>> *grouped_vals) {
+                                   std::vector<int> *uniq_keys = nullptr,
+                                   std::vector<std::vector<RSPVal>> *grouped_vals = nullptr) {
     // check if the storage type of a value is valid
     auto validator = [this](const int key, const RSPVal& val_rowid) -> bool {
       auto val_stype = val_rowid.first->storage_type();

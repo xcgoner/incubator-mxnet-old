@@ -103,8 +103,10 @@ struct COLL_Wrapper<mxnet::gpu, DType> {
   //   CopyFromTo(*input_array, &cpu_buf);
   //   DType *buf = reinterpret_cast<DType *>(cpu_buf.data().dptr<DType>());
   //   unsigned int count = input_array->data().Size();
+  //   LOG(INFO) << "MPI_Bcast";
   //   int ret = MPI_Bcast(buf, count, MPI_Data_Type_Cast<DType>(), root_rank, MPI_COMM_WORLD);
   //   assert(ret == MPI_SUCCESS);
+  //   LOG(INFO) << "MPI_Bcast finished";
   //   CopyFromTo(cpu_buf, input_array);
   //   return ret;
   // }
