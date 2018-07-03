@@ -50,7 +50,6 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
  public:
   explicit KVStoreDistSyncAllReduce(bool use_device_comm)
      : KVStoreLocal(use_device_comm) {
-       LOG(INFO) << "Initializing kvstore";
     int ret = MXCOLLIBInit();
     if (ret != 0) {
       LOG(FATAL) << "kvstore with type [" << type_ << "] failed with collective library init";
@@ -62,87 +61,6 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
     Engine::Get()->WaitForAll();
     // MPI_Barrier(MPI_COMM_WORLD);
   }
-
-  // void Push(const std::vector<int>& keys,
-  //           const std::vector<NDArray>& values,
-  //           int priority) override {
-  //   LOG(WARNING) << "Not supported in KVStore with type " << type_ << ".";
-  // }
-
-  // void Pull(const std::vector<int>& keys,
-  //           const std::vector<NDArray*>& values,
-  //           int priority) override {
-  //   LOG(WARNING) << "Not supported in KVStore with type " << type_ << ".";
-  // }
-
-  // void PullRowSparse(const std::vector<int>& keys,
-  //                    const std::vector<std::pair<NDArray*, NDArray>>& val_rowids,
-  //                    int priority = 0) override {
-  //   LOG(WARNING) << "Not supported in KVStore with type " << type_ << ".";
-  // }
-
-  // void Push(const std::vector<std::string>& str_keys,
-  //           const std::vector<NDArray>& values,
-  //           int priority) override {
-  //   LOG(WARNING) << "Not supported in KVStore with type " << type_ << ".";
-  // }
-
-  // void Pull(const std::vector<std::string>& str_keys,
-  //           const std::vector<NDArray*>& values,
-  //           int priority) override {
-  //   LOG(WARNING) << "Not supported in KVStore with type " << type_ << ".";
-  // }
-
-  // void PullRowSparse(const std::vector<std::string>& str_keys,
-  //                    const std::vector<std::pair<NDArray*, NDArray>>& val_rowids,
-  //                    int priority = 0) override {
-  //   LOG(WARNING) << "Not supported in KVStore with type " << type_ << ".";
-  // }
-
-  // void SetGradientCompression(const std::vector<std::pair<std::string, std::string> >
-  //                             & kwargs) override {
-  //   LOG(WARNING) << "Not supported in KVStore with type " << type_ << ".";
-  // }
-
-  // void PushPull(const std::vector<int> &keys,
-  //               const std::vector<NDArray*> &in_values,
-  //               const std::vector<NDArray*> &out_values,
-  //               int priority) override {
-  //   int ret = MXAllReduce(comm_, keys, in_values, out_values, priority);
-  //   if (ret != 0) {
-  //     LOG(FATAL) << "MXAllReduce is not successful. ret: " << ret;
-  //   }
-  // }
-
-  // void PushPull(const std::vector<std::string> &str_keys,
-  //               const std::vector<NDArray*> &in_values,
-  //               const std::vector<NDArray*> &out_values,
-  //               int priority) override {
-  //   int ret = MXAllReduceEx(comm_, str_keys, in_values, out_values, priority);
-  //   if (ret != 0) {
-  //     LOG(FATAL) << "MXAllReduceEx is not successful. ret: " << ret;
-  //   }
-  // }
-
-  // void Broadcast(const std::vector<int> &keys,
-  //                const std::vector<NDArray*> &values,
-  //                int root_rank,
-  //                int priority) override {
-  //   int ret = MXBroadcast(comm_, keys, values, root_rank, priority);
-  //   if (ret != 0) {
-  //     LOG(FATAL) << "MXBroadCast is not successful. ret: " << ret;
-  //   }
-  // }
-
-  // void Broadcast(const std::vector<std::string> &str_keys,
-  //                const std::vector<NDArray*> &values,
-  //                int root_rank,
-  //                int priority) override {
-  //   int ret = MXBroadcastEx(comm_, str_keys, values, root_rank, priority);
-  //   if (ret != 0) {
-  //     LOG(FATAL) << "MXBroadCastEx is not successful. ret: " << ret;
-  //   }
-  // }
 
   int get_rank() const override {
     int ret, rank;
@@ -216,8 +134,6 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
     std::vector<std::vector<NDArray*> > grouped_outvals;
     GroupKVPairsPull(keys, outvals, &uniq_outkeys, &grouped_outvals);
 
-    size_t idx = 0;
-
     for (size_t i = 0; i < uniq_outkeys.size(); ++i) {
       // merge over devices
       int key = uniq_outkeys[i];
@@ -225,31 +141,14 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
       NDArray merged = comm_->Reduce(key, inval, priority);
 
       const auto storage_type = merged.storage_type();
-      auto &comm_buf = merged;
-      // auto &comm_buf = comm_buf_[key];
-      // if (merged.ctx().dev_mask() == cpu::kDevMask) {
-      //   // Start of a push doesn't guarantee that the previous pushes are completed.
-      //   // This shouldn't affect training of networks though because training involves
-      //   // a sequence of push, pull, then push. This imposes ordering that the
-      //   // second push happens after the first pull, and the pull happens after first push.
-      //   comm_buf = merged;  // avoid memory copy
-      // } else {
-      //   if (comm_buf.is_none()) {
-      //     if (storage_type == kDefaultStorage) {
-      //       comm_buf = NDArray(merged.shape(), pinned_ctx_, true, merged.dtype());
-      //     } else {
-      //       comm_buf = NDArray(storage_type, merged.shape(), pinned_ctx_, true, merged.dtype());
-      //     }
-      //   }
-      //   CopyFromTo(merged, &comm_buf);
-      // }
+      auto &comm_buf = comm_buf_[key];
+      comm_buf = merged;
       // push to servers
       // TODO: compression
       CHECK(storage_type == kDefaultStorage);
       CHECK(gradient_compression_->get_type() == CompressionType::kNone);
-      std::string new_key = MXGetMpiKey(keys, key, idx, false);
-      idx++;
-      MXAllReduce_(new_key, comm_buf, priority);
+      std::string new_key = MXGetMpiKey(uniq_outkeys, key, i, false);
+      MXAllReduceImpl(new_key, comm_buf, priority);
       comm_->Broadcast(key, comm_buf, grouped_outvals[i], priority);
     }
   }
@@ -263,8 +162,6 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
     std::vector<std::vector<NDArray*> > grouped_vals;
     GroupKVPairsPull(keys, values, &uniq_keys, &grouped_vals);
 
-    size_t idx = 0;
-
     for (size_t i = 0; i < uniq_keys.size(); ++i) {
       // merge over devices
       int key = uniq_keys[i];
@@ -273,29 +170,13 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
 
       const auto storage_type = merged.storage_type();
       auto &comm_buf = comm_buf_[key];
-      if (merged.ctx().dev_mask() == cpu::kDevMask) {
-        // Start of a push doesn't guarantee that the previous pushes are completed.
-        // This shouldn't affect training of networks though because training involves
-        // a sequence of push, pull, then push. This imposes ordering that the
-        // second push happens after the first pull, and the pull happens after first push.
-        comm_buf = merged;  // avoid memory copy
-      } else {
-        if (comm_buf.is_none()) {
-          if (storage_type == kDefaultStorage) {
-            comm_buf = NDArray(merged.shape(), pinned_ctx_, true, merged.dtype());
-          } else {
-            comm_buf = NDArray(storage_type, merged.shape(), pinned_ctx_, true, merged.dtype());
-          }
-        }
-        CopyFromTo(merged, &comm_buf);
-      }
+      comm_buf = merged;
       // push to servers
       // TODO: compression
       CHECK(storage_type == kDefaultStorage);
       CHECK(gradient_compression_->get_type() == CompressionType::kNone);
-      std::string new_key =  MXGetMpiKey(keys, key, idx, true);
-      idx++;
-      MXBroadcast_(new_key, comm_buf, root_rank, priority);
+      std::string new_key =  MXGetMpiKey(uniq_keys, key, i, true);
+      MXBroadcastImpl(new_key, comm_buf, root_rank, priority);
       comm_->Broadcast(key, comm_buf, grouped_vals[i], priority);
     }
     // Not sure why this is necessary, but if removed, broadcast will fail

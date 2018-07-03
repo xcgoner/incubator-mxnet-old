@@ -273,12 +273,11 @@ void PerformCollectiveOp(NDArrayTable *ndarray_table, MPIResponse response) {
     }
   }
 
-  auto dtype = input_array->dtype();
+  int dtype = input_array->dtype();
   int ret = 0;
   std::string coll_ops;
   if (response.response_type() == MPIResponse::ALLREDUCE) {
     coll_ops = OPS_ALLREDUCE;
-    LOG(INFO) << "mshadow::gpu::kDevMask = " << mshadow::gpu::kDevMask;
     if (dtype == mshadow::kFloat32) {
       switch (dev_in) {
         case mshadow::cpu::kDevMask: {
@@ -287,7 +286,6 @@ void PerformCollectiveOp(NDArrayTable *ndarray_table, MPIResponse response) {
         }
         case mshadow::gpu::kDevMask: {
 #if MXNET_USE_CUDA
-          LOG(INFO) << "Using gpu mpi allreduce";
           ret = COLL_Wrapper<mxnet::gpu, float>::AllReduce(input_array, output_array);
           break;
 #else
@@ -378,9 +376,7 @@ void PerformCollectiveOp(NDArrayTable *ndarray_table, MPIResponse response) {
 }
 
 void BackgroundThreadLoop() {
-  LOG(INFO) << "MPI_Init";
   auto init_result = MPI_Init(NULL, NULL);
-  LOG(INFO) << "MPI_Init finished";
   if (init_result != MPI_SUCCESS) {
     coll_global.init_status = -1;
     LOG(FATAL) << "MPI_Initialization Failure!";
@@ -392,19 +388,15 @@ void BackgroundThreadLoop() {
   }
 
   int rank;
-  LOG(INFO) << "getting rank";
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   bool is_coordinator = rank == 0;
 
   int size;
-  LOG(INFO) << "getting size";
   MPI_Comm_size(MPI_COMM_WORLD, &size);
 
   MPI_Comm local_comm;
-  LOG(INFO) << "getting type";
   MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &local_comm);
   int local_rank;
-  LOG(INFO) << "getting local rank";
   MPI_Comm_rank(local_comm, &local_rank);
 
   coll_global.rank = rank;
@@ -412,9 +404,7 @@ void BackgroundThreadLoop() {
   coll_global.size = size;
   coll_global.initialization_done = true;
 
-  LOG(INFO) << "notifying";
   coll_global.cv.notify_all();
-  LOG(INFO) << "initialization notified";
 
   if (is_coordinator) {
     coll_global.message_table =
@@ -598,20 +588,17 @@ void BackgroundThreadLoop() {
 int InitializeMPIOnce(bool gpu) {
   if (coll_global.initialized_flag.test_and_set())
     return coll_global.init_status;
-  LOG(INFO) << "Initializing mpi";
   coll_global.device = -1;
   coll_global.pinned_ctx = mxnet::Context::CPUPinned(0);
 
   coll_global.background_thread = std::thread(BackgroundThreadLoop);
   std::unique_lock<std::mutex> lock(coll_global.mu);
-  LOG(INFO) << "waiting for initialization";
   coll_global.cv.wait(lock);
   if (!coll_global.initialization_done) {
     coll_global.init_status = -1;
   }
 
   MXCOLL_DEBUG(coll_global.rank, "MPI Initialization Done!\n");
-  LOG(INFO) << "MPI Initialization Done!";
   return coll_global.init_status;
 }
 
@@ -680,7 +667,7 @@ int MXGetLocalRank(int *ret) {
   return -1;
 }
 
-void MXBroadcast_(const std::string &key,
+void MXBroadcastImpl(const std::string &key,
                   mxnet::NDArray &comm_buf,
                   int root_rank,
                   int priority) {
@@ -705,7 +692,7 @@ void MXBroadcast_(const std::string &key,
     priority, "KVSTORE BROADCAST");
 }
 
-void MXAllReduce_(const std::string &key,
+void MXAllReduceImpl(const std::string &key,
                   mxnet::NDArray &comm_buf,
                   int priority) {
   CollectiveOpRecord record;
@@ -729,45 +716,6 @@ void MXAllReduce_(const std::string &key,
     priority, "KVSTORE PUSHPULL");
 }
 
-int MXAllReduceImpl(const std::vector<std::string> &v_keys,
-                    const std::vector<mxnet::NDArray*> &v_invals,
-                    const std::vector<mxnet::NDArray*> &v_outvals,
-                    int priority) {
-  size_t len = v_keys.size();
-  for (size_t i = 0; i < len; ++i) {
-    CollectiveOpRecord record;
-    record.key = v_keys[i];
-    record.rank = coll_global.rank;
-    record.val_in = v_invals[i];
-    record.val_out = v_outvals[i];
-    MXCOLL_DEBUG(coll_global.rank, "MXAllReduceImpl insert one record key [%s]!\n",
-                record.key.c_str());
-
-    auto all_reduce_async_fn = [record]
-    (mxnet::RunContext rctx, mxnet::Engine::CallbackOnComplete cb) {
-      EnqueueCollective(record, MPIRequest::ALLREDUCE, cb);
-    };
-    if (v_invals[i]->var() != v_outvals[i]->var()) {
-      CHECK_NOTNULL(mxnet::Engine::Get())->PushAsync(
-        all_reduce_async_fn,
-        coll_global.pinned_ctx,
-        {record.val_in->var()},
-        {record.val_out->var()},
-        mxnet::FnProperty::kNormal,
-        priority, "KVSTORE PUSHPULL");
-    } else {
-      CHECK_NOTNULL(mxnet::Engine::Get())->PushAsync(
-        all_reduce_async_fn,
-        coll_global.pinned_ctx,
-        {},
-        {record.val_out->var()},
-        mxnet::FnProperty::kNormal,
-        priority, "KVSTORE PUSHPULL");
-    }
-  }
-  return 0;
-}
-
 std::string MXGetMpiKey(const std::vector<int> &keys,
                        const int key,
                        const int idx,
@@ -787,135 +735,6 @@ std::string MXGetMpiKey(const std::vector<int> &keys,
               key_prefix + delimiter + std::to_string(key) + delimiter +
               idx_prefix + delimiter + std::to_string(index);
   return new_key;
-}
-
-int MXAllReduce(const std::vector<int> &keys,
-                const std::vector<mxnet::NDArray*> &in_values,
-                const std::vector<mxnet::NDArray*> &out_values,
-                int priority) {
-  std::vector<std::string> v_keys;
-  std::string key_prefix  = INT_PREFIX;
-  std::string idx_prefix  = IDX_PREFIX;
-  std::string delimiter   = DELIMITER;
-  std::string ops_prefix  = OPS_PREFIX;
-  std::string ops_allreduce   = OPS_ALLREDUCE;
-  std::string new_key;
-  size_t idx = 0;
-  for (auto& key : keys) {
-    // To simplify original logic for group key value, we rename the original
-    // duplicated key and make every key unique now.
-    size_t index = countIDX(keys, key, idx);
-    new_key = ops_prefix + delimiter + ops_allreduce + delimiter +
-              key_prefix + delimiter + std::to_string(key) + delimiter +
-              idx_prefix + delimiter + std::to_string(index);
-    v_keys.push_back(new_key);
-    idx++;
-  }
-  return MXAllReduceImpl(v_keys, in_values, out_values, priority);
-}
-
-int MXAllReduceEx(const std::vector<std::string> &keys,
-                  const std::vector<mxnet::NDArray*> &in_values,
-                  const std::vector<mxnet::NDArray*> &out_values,
-                  int priority) {
-  std::vector<std::string> v_keys;
-  std::string key_prefix  = STR_PREFIX;
-  std::string idx_prefix  = IDX_PREFIX;
-  std::string delimiter   = DELIMITER;
-  std::string ops_prefix  = OPS_PREFIX;
-  std::string ops_allreduce   = OPS_ALLREDUCE;
-  std::string new_key;
-  size_t idx = 0;
-  for (auto& key : keys) {
-    // To simplify original logic for group key value, we rename the original
-    // duplicated key and make every key unique now.
-    size_t index = countIDX(keys, key, idx);
-    new_key = ops_prefix + delimiter + ops_allreduce + delimiter +
-              key_prefix + delimiter + key + delimiter +
-              idx_prefix + delimiter + std::to_string(index);
-    v_keys.push_back(new_key);
-    idx++;
-  }
-  return MXAllReduceImpl(v_keys, in_values, out_values, priority);
-}
-
-int MXBroadcastImpl(const std::vector<std::string> &v_keys,
-                    const std::vector<mxnet::NDArray*> &v_invals,
-                    int root_rank,
-                    int priority) {
-  size_t len = v_keys.size();
-  for (size_t i = 0; i < len; ++i) {
-    CollectiveOpRecord record;
-    record.key = v_keys[i];
-    record.rank = coll_global.rank;
-    record.root_rank = root_rank;
-    record.val_in = v_invals[i];
-    MXCOLL_DEBUG(coll_global.rank, "MXBroadCastImpl insert one record key [%s]!\n",
-                record.key.c_str());
-
-    auto broadcast_async_fn = [record]
-    (mxnet::RunContext rctx, mxnet::Engine::CallbackOnComplete cb) {
-      EnqueueCollective(record, MPIRequest::BROADCAST, cb);
-    };
-    CHECK_NOTNULL(mxnet::Engine::Get())->PushAsync(
-      broadcast_async_fn,
-      coll_global.pinned_ctx,
-      {},
-      {record.val_in->var()},
-      mxnet::FnProperty::kNormal,
-      priority, "KVSTORE BROADCAST");
-  }
-  return 0;
-}
-
-int MXBroadcast(const std::vector<int> &keys,
-                const std::vector<mxnet::NDArray*> &values,
-                int root_rank,
-                int priority) {
-  std::vector<std::string> v_keys;
-  std::string key_prefix  = INT_PREFIX;
-  std::string idx_prefix  = IDX_PREFIX;
-  std::string delimiter   = DELIMITER;
-  std::string ops_prefix  = OPS_PREFIX;
-  std::string ops_broadcast   = OPS_BROADCAST;
-  std::string new_key;
-  size_t idx = 0;
-  for (auto& key : keys) {
-    // To simplify original logic for group key value, we rename the original
-    // duplicated key and make every key unique now.
-    size_t index = countIDX(keys, key, idx);
-    new_key = ops_prefix + delimiter + ops_broadcast + delimiter +
-              key_prefix + delimiter + std::to_string(key) + delimiter +
-              idx_prefix + delimiter + std::to_string(index);
-    v_keys.push_back(new_key);
-    idx++;
-  }
-  return MXBroadcastImpl(v_keys, values, root_rank, priority);
-}
-
-int MXBroadcastEx(const std::vector<std::string> &keys,
-                  const std::vector<mxnet::NDArray*> &values,
-                  int root_rank,
-                  int priority) {
-  std::vector<std::string> v_keys;
-  std::string key_prefix  = STR_PREFIX;
-  std::string idx_prefix  = IDX_PREFIX;
-  std::string delimiter   = DELIMITER;
-  std::string ops_prefix  = OPS_PREFIX;
-  std::string ops_broadcast   = OPS_BROADCAST;
-  std::string new_key;
-  size_t idx = 0;
-  for (auto& key : keys) {
-    // To simplify original logic for group key value pairs, we rename the original
-    // duplicated key and make every key unique now.
-    size_t index = countIDX(keys, key, idx);
-    new_key = ops_prefix + delimiter + ops_broadcast + delimiter +
-              key_prefix + delimiter + key + delimiter +
-              idx_prefix + delimiter + std::to_string(index);
-    v_keys.push_back(new_key);
-    idx++;
-  }
-  return MXBroadcastImpl(v_keys, values, root_rank, priority);
 }
 
 int MXAllGather(const std::vector<int> &keys,
