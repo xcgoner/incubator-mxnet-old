@@ -55,7 +55,6 @@ KVStore* KVStore::Create(const char *type_name) {
 
 #if MXNET_USE_ALLREDUCE_DIST_KVSTORE
   if (has("dist_sync_allreduce")) {
-    LOG(INFO) << "Creating allreduce kvstore";
     kv = new kvstore::KVStoreDistSyncAllReduce(use_device_comm);
     kv->type_ = tname;
     return kv;

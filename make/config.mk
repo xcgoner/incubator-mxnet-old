@@ -37,8 +37,8 @@
 # choice of compiler
 #--------------------
 
-export CC = mpicc
-export CXX = mpiCC
+export CC = gcc
+export CXX = g++
 export NVCC = nvcc
 
 # whether compile with options for MXNet developer
@@ -160,6 +160,9 @@ USE_ALLREDUCE_DIST_KVSTORE = 1
 # set this path, otherwise we will use default mpi (mpich).
 MPI_ROOT = /usr/local/mpi
 # MPI_ROOT = 
+
+# whether or not to enable cuda-aware feature of openmpi
+USE_CUDA_AWARE_MPI = 0
 
 # whether or not allow to read and write HDFS directly. If yes, then hadoop is
 # required

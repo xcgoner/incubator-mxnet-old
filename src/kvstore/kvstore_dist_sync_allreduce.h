@@ -133,7 +133,6 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
     GroupKVPairsPush(keys, invals, &uniq_inkeys, &grouped_invals);
     std::vector<std::vector<NDArray*> > grouped_outvals;
     GroupKVPairsPull(keys, outvals, &uniq_outkeys, &grouped_outvals);
-
     for (size_t i = 0; i < uniq_outkeys.size(); ++i) {
       // merge over devices
       int key = uniq_outkeys[i];
@@ -142,7 +141,23 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
 
       const auto storage_type = merged.storage_type();
       auto &comm_buf = comm_buf_[key];
+    #if MXNET_USE_CUDA_AWARE_MPI
       comm_buf = merged;
+    #else
+      if (merged.ctx().dev_mask() == cpu::kDevMask) {
+        comm_buf = merged;  // avoid memory copy
+      } else {
+         if (comm_buf.is_none()) {
+          if (storage_type == kDefaultStorage) {
+            comm_buf = NDArray(merged.shape(), pinned_ctx_, true, merged.dtype());
+          } else {
+            comm_buf = NDArray(storage_type, merged.shape(), pinned_ctx_, true, merged.dtype());
+          }
+        }
+        CopyFromTo(merged, &comm_buf);
+      }
+    #endif
+      
       // push to servers
       // TODO: compression
       CHECK(storage_type == kDefaultStorage);
@@ -170,7 +185,24 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
 
       const auto storage_type = merged.storage_type();
       auto &comm_buf = comm_buf_[key];
+    #if MXNET_USE_CUDA_AWARE_MPI
+      // LOG(INFO) << "using cuda-aware";
       comm_buf = merged;
+    #else
+      // LOG(INFO) << "not using cuda-aware";
+      if (merged.ctx().dev_mask() == cpu::kDevMask) {
+        comm_buf = merged;  // avoid memory copy
+      } else {
+         if (comm_buf.is_none()) {
+          if (storage_type == kDefaultStorage) {
+            comm_buf = NDArray(merged.shape(), pinned_ctx_, true, merged.dtype());
+          } else {
+            comm_buf = NDArray(storage_type, merged.shape(), pinned_ctx_, true, merged.dtype());
+          }
+        }
+        CopyFromTo(merged, &comm_buf);
+      }
+    #endif
       // push to servers
       // TODO: compression
       CHECK(storage_type == kDefaultStorage);
@@ -179,8 +211,10 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
       MXBroadcastImpl(new_key, comm_buf, root_rank, priority);
       comm_->Broadcast(key, comm_buf, grouped_vals[i], priority);
     }
-    // Not sure why this is necessary, but if removed, broadcast will fail
-    Engine::Get()->WaitForAll();
+    #if MXNET_USE_CUDA_AWARE_MPI
+      // Not sure why this is necessary, but if removed, broadcast will fail
+      Engine::Get()->WaitForAll();
+    #endif
   }
 
   /**
@@ -189,7 +223,6 @@ class KVStoreDistSyncAllReduce : public KVStoreLocal {
    * for the data in pull and for original data in push
    */
   std::unordered_map<int, NDArray> comm_buf_;
-
 };
 }  // namespace kvstore
 }  // namespace mxnet

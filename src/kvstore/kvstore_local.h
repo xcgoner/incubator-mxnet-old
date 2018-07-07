@@ -77,6 +77,7 @@ class KVStoreLocal : public KVStore {
 
   void Init(const std::vector<std::string>& str_keys,
             const std::vector<NDArray>& values) override {
+    
     SetKeyType(kStringKey);
     std::vector<int> keys(str_keys.size());
     for (size_t i = 0; i < str_keys.size(); ++i) {

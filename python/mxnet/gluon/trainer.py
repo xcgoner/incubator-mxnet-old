@@ -125,20 +125,11 @@ class Trainer(object):
             # optimizer preferably needs to be set before init for multiprecision
             for i, param in enumerate(self._params):
                 param_arrays = param.list_data()
-                # if i == 0:
-                #     print("before sync")
-                #     print(param_arrays)
+                kvstore.init(i, param_arrays[0])
                 if 'allreduce' not in kvstore.type:
-                    kvstore.init(i, param_arrays[0])
                     kvstore.pull(i, param_arrays, priority=-i)
                 else:
-                    print('start broadcast')
-                    kvstore.init(i, param_arrays[0])
                     kvstore.broadcast(i, param_arrays, 0, priority=-i)
-                    print('end broadcast')
-                # if i == 0:
-                #     print("after sync")
-                #     print(param_arrays)
             self._kvstore = kvstore
             self._update_on_kvstore = update_on_kvstore
         else:

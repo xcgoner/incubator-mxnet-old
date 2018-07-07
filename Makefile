@@ -351,6 +351,11 @@ ifeq ($(USE_ALLREDUCE_DIST_KVSTORE), 1)
   	# Default mpi
 		MPI_ROOT := $(shell ./prepare_openmpi.sh $(DEF_MPI_PATH))
 	endif
+	ifeq ($(USE_CUDA_AWARE_MPI), 1)
+		CFLAGS += -DMXNET_USE_CUDA_AWARE_MPI=1
+	else
+		CFLAGS += -DMXNET_USE_CUDA_AWARE_MPI=0
+	endif
 #  CFLAGS += -D__LP64__ 
  CFLAGS += -DMXNET_USE_ALLREDUCE_DIST_KVSTORE=1 -I$(MPI_ROOT)/include -I$(PROTOBUF_DIR)/include -I$(COLL_PATH)/include -I$(COLL_PATH)/src
  LDFLAGS += -L$(MPI_ROOT)/lib -Wl,-rpath=$(MPI_ROOT)/lib -lmpi
