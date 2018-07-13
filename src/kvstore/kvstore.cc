@@ -45,13 +45,9 @@ KVStore* KVStore::Create(const char *type_name) {
   std::string tname = type_name;
   std::transform(tname.begin(), tname.end(), tname.begin(), ::tolower);
   KVStore* kv = nullptr;
-  bool use_device_comm = false;
   auto has = [tname](const std::string& pattern) {
     return tname.find(pattern) != std::string::npos;
   };
-  if (has("device")) {
-    use_device_comm = true;
-  }
 
 #if MXNET_USE_ALLREDUCE_DIST_KVSTORE
   if (has("dist_sync_allreduce")) {
@@ -68,7 +64,7 @@ KVStore* KVStore::Create(const char *type_name) {
 
   if (has("dist")) {
 #if MXNET_USE_DIST_KVSTORE
-    kv = new kvstore::KVStoreDist(use_device_comm);
+    kv = new kvstore::KVStoreDist(tname);
     if (!has("_async") && kv->IsWorkerNode() && kv->get_rank() == 0) {
       // configure the server to be the sync mode
       kv->SendCommandToServers(static_cast<int>(kvstore::CommandType::kSyncMode), "");
@@ -86,7 +82,7 @@ KVStore* KVStore::Create(const char *type_name) {
       return nullptr;
 #endif
     } else {
-      kv =  new kvstore::KVStoreLocal(use_device_comm);
+      kv =  new kvstore::KVStoreLocal(tname);
     }
   }
   kv->type_ = tname;

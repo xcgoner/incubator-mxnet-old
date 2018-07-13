@@ -34,6 +34,8 @@
 #include <functional>
 #include <algorithm>
 #include "./comm.h"
+#include "./comm_tree.h"
+#include "./comm_clique.h"
 #include "./kvstore_utils.h"
 #include "../ndarray/ndarray_function.h"
 
@@ -52,13 +54,27 @@ enum KeyType {
 class KVStoreLocal : public KVStore {
  public:
   /*
-   * \param use_device_comm
+   * \param type_name
    */
-  explicit KVStoreLocal(bool use_device_comm) : KVStore() {
-    if (use_device_comm) {
+  explicit KVStoreLocal(const std::string& type_name) : KVStore() {
+    auto has = [type_name](const std::string& pattern) {
+      return type_name.find(pattern) != std::string::npos;
+    };
+    if (has("device")) {
       comm_ = new CommDevice();
-    } else {
+      LOG(INFO) << "Using CommDevice";
+    } 
+    else if (has("tree")) {
+      comm_ = new CommDeviceTree();
+      LOG(INFO) << "Using CommDeviceTree";
+    }
+    else if (has("clique")) {
+      comm_ = new CommDeviceClique();
+      LOG(INFO) << "Using CommDeviceClique";
+    }
+    else {
       comm_ = new CommCPU();
+      LOG(INFO) << "Using CommCPU";
     }
     pinned_ctx_ = comm_->pinned_ctx();
     gradient_compression_ = std::make_shared<GradientCompression>();
@@ -276,7 +292,7 @@ class KVStoreLocal : public KVStore {
       // invalid, print warning messages once
       if (this->warnings_printed_.find(key) == this->warnings_printed_.end()) {
         LOG(INFO) << "Warning: non-default weights detected during kvstore pull. "
-                     "This call has been ignored. Please make sure to use"
+                     "This call has been ignored. Please make sure to use "
                      "kv.row_sparse_pull() or module.prepare() with row_ids.";
         this->warnings_printed_.insert(key);
       }
