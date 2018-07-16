@@ -72,7 +72,6 @@ class RandomSampler(Sampler):
     def __len__(self):
         return self._length
 
-
 class BatchSampler(Sampler):
     """Wraps over another `Sampler` and return mini-batches of samples.
 

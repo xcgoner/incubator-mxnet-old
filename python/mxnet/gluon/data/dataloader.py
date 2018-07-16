@@ -149,19 +149,22 @@ def default_mp_batchify_fn(data):
                         ctx=context.Context('cpu_shared', 0))
 
 
-def worker_loop(dataset, key_queue, data_queue, batchify_fn):
+def worker_loop(dataset, key_queue, data_queue, batchify_fn, slice_start, slice_end):
     """Worker loop for multiprocessing DataLoader."""
     dataset._fork()
     while True:
         idx, samples = key_queue.get()
         if idx is None:
             break
-        batch = batchify_fn([dataset[i] for i in samples])
+        if slice_end-slice_start >= len(samples):
+            batch = batchify_fn([dataset[i] for i in samples])
+        else:
+            batch = batchify_fn([dataset[i] for i in samples[slice_start:slice_end]])
         data_queue.put((idx, batch))
 
 class _MultiWorkerIter(object):
     """Interal multi-worker iterator for DataLoader."""
-    def __init__(self, num_workers, dataset, batchify_fn, batch_sampler):
+    def __init__(self, num_workers, dataset, batchify_fn, batch_sampler, slice_start, slice_end):
         assert num_workers > 0, "_MultiWorkerIter is not for {} workers".format(num_workers)
         self._num_workers = num_workers
         self._dataset = dataset
@@ -179,7 +182,7 @@ class _MultiWorkerIter(object):
         for _ in range(self._num_workers):
             worker = multiprocessing.Process(
                 target=worker_loop,
-                args=(self._dataset, self._key_queue, self._data_queue, self._batchify_fn))
+                args=(self._dataset, self._key_queue, self._data_queue, self._batchify_fn, slice_start,slice_end))
             worker.daemon = True
             worker.start()
             workers.append(worker)
@@ -274,15 +277,26 @@ class DataLoader(object):
                 else:
                     data = np.asarray(data)
                     return nd.array(data, dtype=data.dtype)
-
     num_workers : int, default 0
         The number of multiprocessing workers to use for data preprocessing.
         `num_workers > 0` is not supported on Windows yet.
+    kvstore : str or KVStore
+        kvstore type for multi-gpu and distributed training. See help on
+        :any:`mxnet.kvstore.create` for more information.
+
     """
     def __init__(self, dataset, batch_size=None, shuffle=False, sampler=None,
                  last_batch=None, batch_sampler=None, batchify_fn=None,
-                 num_workers=0):
+                 num_workers=0, kvstore=None):
         self._dataset = dataset
+        # assume the batch can be evenly assigned
+        if kvstore is None or isinstance(kvstore, str):
+            self._slice_start = 0
+            self._slice_end = int(batch_size)
+        else:
+            # assume that batch_size is dividable by kvstore.num_workers
+            self._slice_start = int(kvstore.rank * batch_size / kvstore.num_workers)
+            self._slice_end = int(self._slice_start + batch_size / kvstore.num_workers)
 
         if batch_sampler is None:
             if batch_size is None:
@@ -291,6 +305,9 @@ class DataLoader(object):
             if sampler is None:
                 if shuffle:
                     sampler = _sampler.RandomSampler(len(dataset))
+                    # print('Using different subset on different workers')
+                    # print('num_workers=', kv_num_workers)
+                    # sampler = _sampler.RandomPermuteSampler(len(dataset), kv_num_workers, kv_rank)
                 else:
                     sampler = _sampler.SequentialSampler(len(dataset))
             elif shuffle:
@@ -314,14 +331,16 @@ class DataLoader(object):
             self._batchify_fn = batchify_fn
 
     def __iter__(self):
-        if self._num_workers == 0:
-            generator = lambda: [(yield self._batchify_fn([self._dataset[idx] for idx in batch]))
+        if self._num_workers <= 1:
+            generator = lambda: [(yield self._batchify_fn([self._dataset[idx] for idx in batch[self._slice_start:self._slice_end]]))
                                  for batch in self._batch_sampler]
             return generator()
 
         # multi-worker
+        # TODO: kvstore, multiple workers
         return _MultiWorkerIter(self._num_workers, self._dataset,
-                                self._batchify_fn, self._batch_sampler)
+                                self._batchify_fn, self._batch_sampler,
+                                self._slice_start, self._slice_end)
 
     def __len__(self):
         return len(self._batch_sampler)

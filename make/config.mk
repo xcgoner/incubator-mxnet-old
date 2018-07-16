@@ -67,7 +67,7 @@ ADD_CFLAGS =
 #---------------------------------------------
 
 # whether use CUDA during compile
-USE_CUDA = 0
+USE_CUDA = 1
 
 # add the path to CUDA library to link and compile flag
 # if you have already add them to environment variable, leave it as NONE
@@ -78,7 +78,7 @@ USE_CUDA_PATH = NONE
 ENABLE_CUDA_RTC = 1
 
 # whether use CuDNN R3 library
-USE_CUDNN = 0
+USE_CUDNN = 1
 
 #whether to use NCCL library
 USE_NCCL = 0
@@ -156,7 +156,16 @@ USE_F16C =
 #----------------------------
 
 # whether or not to enable multi-machine supporting
-USE_DIST_KVSTORE = 0
+USE_DIST_KVSTORE = 1
+
+# whether or not to enable kvstore with type dist_sync_allreduce
+USE_ALLREDUCE_DIST_KVSTORE = 1
+
+# mpi library root directory, mpi_collectives will depend
+# upon $(MPI_ROOT)/include $(MPI_ROOT)/lib, user need to
+# set this path, otherwise we will use default mpi (mpich).
+MPI_ROOT = /usr/local/mpi
+# MPI_ROOT = 
 
 # whether or not allow to read and write HDFS directly. If yes, then hadoop is
 # required

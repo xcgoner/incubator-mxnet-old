@@ -166,6 +166,9 @@ class KVStore(object):
         There is no synchronization between workers.
         One can use ``_barrier()`` to sync all workers.
 
+        Note: This api is not supported for kvstore with type dist_sync_allreduce.
+        Use :py:meth:`pushpull` instead.
+
         Parameters
         ----------
         key : str, int, or sequence of str or int
@@ -226,14 +229,20 @@ class KVStore(object):
         >>> print b
         <RowSparseNDArray 2x3 @cpu(0)>
         """
-        ckeys, cvals, use_str_keys = _ctype_key_value(key, value)
-        if use_str_keys:
-            check_call(_LIB.MXKVStorePushEx(
-                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+        # debugging
+        # print('[{}] push: key: {}, val: {}'.format(self.rank, key, value))
+        
+        if self.type != 'dist_sync_allreduce':
+            ckeys, cvals, use_str_keys = _ctype_key_value(key, value)
+            if use_str_keys:
+                check_call(_LIB.MXKVStorePushEx(
+                    self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+            else:
+                check_call(_LIB.MXKVStorePush(
+                    self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
         else:
-            check_call(_LIB.MXKVStorePush(
-                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
-
+            raise Exception("This api is not supported for kvstore with type %s. \
+                             Please use pushpull instead."%self.type)
 
     def pull(self, key, out=None, priority=0, ignore_sparse=True):
         """ Pulls a single value or a sequence of values from the store.
@@ -249,6 +258,9 @@ class KVStore(object):
 
         pull with `RowSparseNDArray` is not supported for dist kvstore.
         Please use ``row_sparse_pull`` instead.
+
+        Note: This api is not supported for kvstore with type dist_sync_allreduce.
+        Use :py:meth:`pushpull` instead.
 
         Parameters
         ----------
@@ -298,6 +310,7 @@ class KVStore(object):
         [[ 2.  2.  2.]
         [ 2.  2.  2.]]
         """
+
         assert(out is not None)
         ckeys, cvals, use_str_keys = _ctype_key_value(key, out)
         if use_str_keys:
@@ -309,6 +322,7 @@ class KVStore(object):
                                                     cvals, ctypes.c_int(priority),
                                                     ctypes.c_bool(ignore_sparse)))
 
+
     def row_sparse_pull(self, key, out=None, priority=0, row_ids=None):
         """ Pulls a single RowSparseNDArray value or a sequence of RowSparseNDArray values \
         from the store with specified row_ids. When there is only one row_id, KVStoreRowSparsePull \
@@ -319,6 +333,8 @@ class KVStore(object):
         same input key(s) are finished.
 
         The returned values are guaranteed to be the latest values in the store.
+
+        Note: This api is not supported for kvstore with type dist_sync_allreduce
 
         Parameters
         ----------
@@ -363,6 +379,8 @@ class KVStore(object):
         """
         assert(out is not None)
         assert(row_ids is not None)
+        if self.type == 'dist_sync_allreduce':
+            raise Exception("This api is not supported for kvstore with type %s"%self.type)
         if isinstance(row_ids, NDArray):
             row_ids = [row_ids]
         assert(isinstance(row_ids, list)), \
@@ -437,7 +455,7 @@ class KVStore(object):
             Other keys in this dictionary are optional and specific to the type
             of gradient compression.
         """
-        if ('device' in self.type) or ('dist' in self.type): # pylint: disable=unsupported-membership-test
+        if ('device' in self.type) or ('dist' in self.type) and ('allreduce' not in self.type): # pylint: disable=unsupported-membership-test
             ckeys, cvals = _ctype_dict(compression_params)
             check_call(_LIB.MXKVStoreSetGradientCompression(self.handle,
                                                             mx_uint(len(compression_params)),
@@ -452,6 +470,8 @@ class KVStore(object):
         If using multiple machines and this operation is invoked from a worker node,
         it will serialized the optimizer with pickle and send it to all servers.
         The function returns after all servers have been updated.
+        In kvstore with dist_sync_allreduce, this api only updates the local optimizer
+        same as single machine.
 
         Parameters
         ----------
@@ -479,7 +499,7 @@ class KVStore(object):
         check_call(_LIB.MXKVStoreIsWorkerNode(ctypes.byref(is_worker)))
 
         # pylint: disable=invalid-name
-        if 'dist' in self.type and is_worker.value: # pylint: disable=unsupported-membership-test
+        if ('dist' in self.type) and ('mpi' not in self.type) and is_worker.value: # pylint: disable=unsupported-membership-test
             # send the optimizer to server
             try:
                 # use ASCII protocol 0, might be slower, but not a big ideal
@@ -627,8 +647,11 @@ class KVStore(object):
         body : str
             the body of the command.
         """
-        check_call(_LIB.MXKVStoreSendCommmandToServers(
-            self.handle, mx_uint(head), c_str(body)))
+        if self.type == 'dist_sync_allreduce':
+            raise Exception("This api is not supported for kvstore with type %s"%self.type)
+        else:
+            check_call(_LIB.MXKVStoreSendCommmandToServers(
+                self.handle, mx_uint(head), c_str(body)))
 
 def create(name='local'):
     """Creates a new KVStore.
@@ -656,9 +679,14 @@ def create(name='local'):
     No two updates happen on the same weight at the same time. However, the order is not
     guaranteed.
 
+    ``dist_sync_allreduce``: Behaves similarly to dist_sync but with some major difference.
+    With ``dist_sync_allreduce``, no parameter server configured, replace push and pull apis with
+    pushpull.
+
     Parameters
     ----------
-    name : {'local', 'device', 'nccl', 'dist_sync', 'dist_device_sync', 'dist_async'}
+    name : {'local', 'device', 'nccl', 'dist_sync', 'dist_device_sync', 'dist_async',
+            'dist_sync_allreduce'}
         The type of KVStore.
     Returns
     -------
