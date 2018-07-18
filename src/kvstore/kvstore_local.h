@@ -34,6 +34,8 @@
 #include <functional>
 #include <algorithm>
 #include "./comm.h"
+#include "./comm_tree.h"
+#include "./comm_clique.h"
 #include "./kvstore_utils.h"
 #include "../ndarray/ndarray_function.h"
 
@@ -52,13 +54,29 @@ enum KeyType {
 class KVStoreLocal : public KVStore {
  public:
   /*
-   * \param use_device_comm
+   * \param type_name
    */
-  explicit KVStoreLocal(bool use_device_comm) : KVStore() {
-    if (use_device_comm) {
+  explicit KVStoreLocal(const std::string& type_name) : KVStore() {
+    auto has = [type_name](const std::string& pattern) {
+      return type_name.find(pattern) != std::string::npos;
+    };
+    if (has("device")) {
       comm_ = new CommDevice();
-    } else {
+      LOG(INFO) << type_name << ": using CommDevice";
+    } 
+    else if (has("tree")) {
+      comm_ = new CommDeviceTree();
+      LOG(INFO) << type_name << ": using CommDeviceTree";
+    }
+    else if (has("clique")) {
+      bool is_dist = false;
+      if (has("dist")) is_dist = true;
+      comm_ = new CommDeviceClique(is_dist);
+      LOG(INFO) << type_name << ": using CommDeviceClique";
+    }
+    else {
       comm_ = new CommCPU();
+      LOG(INFO) << type_name << ": using CommCPU";
     }
     pinned_ctx_ = comm_->pinned_ctx();
     gradient_compression_ = std::make_shared<GradientCompression>();

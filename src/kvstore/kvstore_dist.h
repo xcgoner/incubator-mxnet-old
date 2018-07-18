@@ -43,8 +43,8 @@ namespace kvstore {
  */
 class KVStoreDist : public KVStoreLocal {
  public:
-  explicit KVStoreDist(bool use_device_comm)
-      : KVStoreLocal(use_device_comm), ps_worker_(nullptr), server_(nullptr) {
+  explicit KVStoreDist(const std::string& type_name)
+      : KVStoreLocal(type_name), ps_worker_(nullptr), server_(nullptr) {
     if (IsWorkerNode()) {
       int new_customer_id = GetNewCustomerId();
       ps_worker_ = new ps::KVWorker<char>(0, new_customer_id);
