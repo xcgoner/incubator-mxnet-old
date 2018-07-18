@@ -679,6 +679,9 @@ class CommDevice : public Comm {
       return std::get<1>(a).Size() > std::get<1>(b).Size();
     });
 
+    // debug
+    LOG(INFO) << "# of keys: " << sorted_key_attrs_.size();
+
     std::unordered_map<int, std::pair<Context, size_t>> ctx_info;
     for (auto d : devs) {
       ctx_info[d.dev_id] = std::make_pair(d, 0);

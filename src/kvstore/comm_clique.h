@@ -49,9 +49,10 @@ namespace kvstore {
  */
 class CommDeviceClique : public CommDevice {
  public:
-  CommDeviceClique() {
+  CommDeviceClique(bool is_dist) {
     inited_ = false;
-    gpuarray_bound_ = dmlc::GetEnv("MXNET_KVSTORE_GPUARRAY_BOUND", 10000000);
+    // gpuarray_bound_ = dmlc::GetEnv("MXNET_KVSTORE_GPUARRAY_BOUND", 10000000);
+    is_dist_ = is_dist;
   }
 
   virtual ~CommDeviceClique() { }
@@ -91,21 +92,22 @@ class CommDeviceClique : public CommDevice {
             buf_merged.shape(), buf_ctx, false, buf_merged.dtype());
         }
         for (size_t i = 0; i < cliques_.size(); ++i) {
+          if (is_dist_) {
+            buf.copy_buf[src.size()+i] = NDArray(
+              buf_merged.shape(), pinned_ctx_, false, buf_merged.dtype());
+          }
+          else {
+            buf.copy_buf[src.size()+i] = NDArray(
+              buf_merged.shape(), buf_merged.ctx(), false, buf_merged.dtype());
+          }
           buf.copy_buf[src.size()+i] = NDArray(
-            buf_merged.shape(), buf_merged.ctx(), false, buf_merged.dtype());
+              buf_merged.shape(), buf_merged.ctx(), false, buf_merged.dtype());
         }
       }
+      
+      CHECK(buf_merged.ctx().dev_mask() == gpu::kDevMask);
 
       std::vector< std::vector<NDArray> > sub_reduce(cliques_.size());
-      // for (size_t i = 0; i < src.size(); ++i) {
-      //   CopyFromTo(src[i], &(buf.copy_buf[i]), priority);
-      //   int idx = dev_clique_[gpus_[src[i].ctx().dev_id]];
-      //   // TODO: initialize once
-      //   sub_reduce[idx].push_back(buf.copy_buf[i]);
-      // }
-      // for (size_t i = 0; i < cliques_.size(); ++i) {
-      //   ElementwiseSum(sub_reduce[i], &sub_reduce[i][0], priority);
-      // }
       std::vector< std::vector<NDArray> > src_sub_reduce(cliques_.size());
       for (size_t i = 0; i < src.size(); ++i) {
         int idx = dev_clique_[gpus_[src[i].ctx().dev_id]];
@@ -120,27 +122,37 @@ class CommDeviceClique : public CommDevice {
         ElementwiseSum(sub_reduce[i], &sub_reduce[i][0], priority);
       }
 
-      std::vector<NDArray> reduce(cliques_.size());
-      for (size_t i = 0; i < cliques_.size(); ++i) {
-        if (sub_reduce[i][0].ctx().dev_id == buf.copy_buf[src.size()+i].ctx().dev_id) {
-          reduce[i] = sub_reduce[i][0];
+      if (cliques_.size() > 1) {
+        std::vector<NDArray> reduce(cliques_.size());
+        for (size_t i = 0; i < cliques_.size(); ++i) {
+          if (sub_reduce[i][0].ctx().dev_id == buf.copy_buf[src.size()+i].ctx().dev_id) {
+            reduce[i] = sub_reduce[i][0];
+          }
+          else {
+            CopyFromTo(sub_reduce[i][0], &(buf.copy_buf[src.size()+i]), priority);
+            reduce[i] = buf.copy_buf[src.size()+i];
+          }
         }
-        else {
-          CopyFromTo(sub_reduce[i][0], &(buf.copy_buf[src.size()+i]), priority);
-          reduce[i] = buf.copy_buf[src.size()+i];
-        }
+        buf_merged = reduce[0];
+        ElementwiseSum(reduce, &(buf_merged), priority);
       }
-      buf_merged = reduce[0];
-      ElementwiseSum(reduce, &buf_merged, priority);
+      else {
+        buf_merged = sub_reduce[0][0];
+      }
+      return buf_merged;
     } else {
       // sparse reduce
       buf_merged = ReduceRowSparse(key, src, priority);
+      return buf_merged;
     }
-    return buf_merged;
   }
 
   void Broadcast(int key, const NDArray& src,
                  const std::vector<NDArray*> dst, int priority) override {
+    if (dst.size() == 1) {
+      CopyFromTo(src, dst[0], priority);
+      return;
+    }
     if (!inited_) {
       // copy to a random device first
       int dev_id = key % dst.size();
@@ -151,24 +163,42 @@ class CommDeviceClique : public CommDevice {
         }
       }
     } else {
+      NDArray src_tmp;
+      if (is_dist_) {
+        CHECK(src.ctx().dev_mask() == cpu::kDevMask);
+        auto& buf = GetMergeBuf(key);
+        auto& buf_merged = buf.merged_buf(src.storage_type());
+        CopyFromTo(src, &buf_merged, priority);
+        src_tmp = buf_merged;
+      }
+      else {
+        src_tmp = src;                                                                        
+      }
       std::vector< std::vector<NDArray*> > sub_broadcast(cliques_.size());
-      int src_clique_idx = dev_clique_[gpus_[src.ctx().dev_id]];
+      int src_clique_idx = dev_clique_[gpus_[src_tmp.ctx().dev_id]];
       for (size_t i = 0; i < dst.size(); ++i) {
         int clique_idx = dev_clique_[gpus_[dst[i]->ctx().dev_id]];
         sub_broadcast[clique_idx].push_back(dst[i]);
       }
       for (size_t i = 0; i < cliques_.size(); ++i) {
         if (i != src_clique_idx) {
-          size_t rnd_id = key % sub_broadcast[i].size();
-          CopyFromTo(src, sub_broadcast[i][rnd_id], priority);
+          size_t connect_id = GetConnected(key, src_tmp.ctx().dev_id, i);
+          size_t sub_bcast_id;
           for (size_t j = 0; j < sub_broadcast[i].size(); ++j) {
-            if (j == rnd_id) continue;
-            CopyFromTo(*(sub_broadcast[i][rnd_id]), sub_broadcast[i][j], priority);         
+            if (gpus_[sub_broadcast[i][j]->ctx().dev_id] == connect_id) {
+              CopyFromTo(src_tmp, sub_broadcast[i][j], priority);
+              sub_bcast_id = j;
+              break;
+            }
+          }
+          for (size_t j = 0; j < sub_broadcast[i].size(); ++j) {
+            if (sub_bcast_id == j) continue;
+            CopyFromTo(*(sub_broadcast[i][sub_bcast_id]), sub_broadcast[i][j], priority);         
           }
         }
         else {
           for (size_t j = 0; j < sub_broadcast[i].size(); ++j) {
-            CopyFromTo(src, sub_broadcast[i][j], priority);
+            CopyFromTo(src_tmp, sub_broadcast[i][j], priority);
           }
         }
       }
@@ -272,6 +302,11 @@ class CommDeviceClique : public CommDevice {
       int idx = 0;
       std::iota(gpu_idx.begin(), gpu_idx.end(), idx++);
       cliques_.push_back(gpu_idx);
+      std::ostringstream ss;
+      for (auto v : cliques_[0]) {
+        ss << v << ", ";
+      }
+      LOG(INFO) << ss.str();
     }
     else {
       std::vector<std::vector<int>> cliques;
@@ -330,19 +365,17 @@ class CommDeviceClique : public CommDevice {
           dev_clique_[v] = i;
         }
       }
-
-      gpu_clique_connect_.resize( n, std::vector<int>(cliques_.size(), -1) );
-      for (int i = 0; i < n; ++i) {
-        for (size_t j = 0; j < cliques_.size(); ++j) {
-          for (auto v : cliques_[j]) {
-            if (p2p_[i][v] || i == v) {
-              gpu_clique_connect_[i][j] = v;
-              break;
-            }
+    }
+    gpu_clique_connect_.resize( n, std::vector<int>(cliques_.size(), -1) );
+    for (int i = 0; i < n; ++i) {
+      for (size_t j = 0; j < cliques_.size(); ++j) {
+        for (auto v : cliques_[j]) {
+          if (p2p_[i][v] || i == v) {
+            gpu_clique_connect_[i][j] = v;
+            break;
           }
         }
       }
-
     }
 #endif
   }
@@ -357,6 +390,8 @@ class CommDeviceClique : public CommDevice {
   std::unordered_map<int, int> dev_clique_;
   std::vector< std::vector<int> > gpu_clique_connect_;
   int   gpuarray_bound_;
+  // flag for distributed kvstore
+  bool is_dist_;
 };
 
 }  // namespace kvstore

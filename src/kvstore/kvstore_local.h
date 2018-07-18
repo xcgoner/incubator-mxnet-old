@@ -62,19 +62,21 @@ class KVStoreLocal : public KVStore {
     };
     if (has("device")) {
       comm_ = new CommDevice();
-      LOG(INFO) << "Using CommDevice";
+      LOG(INFO) << type_name << ": using CommDevice";
     } 
     else if (has("tree")) {
       comm_ = new CommDeviceTree();
-      LOG(INFO) << "Using CommDeviceTree";
+      LOG(INFO) << type_name << ": using CommDeviceTree";
     }
     else if (has("clique")) {
-      comm_ = new CommDeviceClique();
-      LOG(INFO) << "Using CommDeviceClique";
+      bool is_dist = false;
+      if (has("dist")) is_dist = true;
+      comm_ = new CommDeviceClique(is_dist);
+      LOG(INFO) << type_name << ": using CommDeviceClique";
     }
     else {
       comm_ = new CommCPU();
-      LOG(INFO) << "Using CommCPU";
+      LOG(INFO) << type_name << ": using CommCPU";
     }
     pinned_ctx_ = comm_->pinned_ctx();
     gradient_compression_ = std::make_shared<GradientCompression>();

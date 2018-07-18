@@ -55,6 +55,8 @@ def parse_args():
                         help='the optimizer set to kvstore. None means no optimizer')
     parser.add_argument('--gc-type', type=str, default='none',
                         help='type of gradient compression')
+    parser.add_argument('--profile', type=str, default='profile_output',
+                        help='name of profile output')
     args = parser.parse_args()
     logging.info(args)
     return args
@@ -74,7 +76,7 @@ def error(gpu_res, cpu_res):
     return res
 
 def run(network, optimizer, gpus, kv_store, image_shape, disp_batches,
-        num_batches, test_results, gc_type, **kwargs):
+        num_batches, test_results, gc_type, profile, **kwargs):
     # create kvstore and optimizer
     devs = [mx.gpu(int(i)) for i in gpus.split(',')]
     kv = mx.kv.create(kv_store)
@@ -93,8 +95,11 @@ def run(network, optimizer, gpus, kv_store, image_shape, disp_batches,
     data_shape = (32,) + tuple([int(s) for s in image_shape.split(',')])
     shapes = get_shapes(symbol, data_shape)
 
-    size = float(sum([reduce(lambda x,y : x*y, s, 1) for s in shapes])) * 4 / 1e6
-    logging.info('num of arrays = %d, total size = %f MB' % (len(shapes), size))
+    # size = float(sum([reduce(lambda x,y : x*y, s, 1) for s in shapes])) * 4 / 1e6
+    # logging.info('num of arrays = %d, total size = %f MB' % (len(shapes), size))
+
+    size = float(shapes[0][0] * shapes[0][1]) * 4 / 1e6
+    logging.info('total size = %f MB' % (size))
 
     for i, s in enumerate(shapes):
         kv.init(i, mx.nd.zeros(s))
@@ -111,39 +116,29 @@ def run(network, optimizer, gpus, kv_store, image_shape, disp_batches,
     res = []
     bandwidth_sum = 0.0
     counter = 0
+    mx.profiler.set_config(profile_all=True, filename='{}.json'.format(profile))
+    mx.profiler.set_state('run')
     for b in range(0, num_batches+1):
         tic = time.time()
-        for i,g in enumerate(grads):
-            kv.push(i, g, i)
-
-        for i,w in enumerate(weights):
-            kv.pull(i, w, i)
-        for ws in weights:
-            for w in ws:
-                w.wait_to_read()
+        kv.push(0, grads[0], 0)
+        kv.pull(0, weights[0], 0)
+        for w in weights[0]:
+            w.wait_to_read()
         toc += time.time() - tic
-        if test_results:
-            if opt == None:
-                err = error(weights, cpu_grads)
-            else:
-                for i, wg in enumerate(zip(cpu_weights, cpu_grads)):
-                    updater(i, wg[1], wg[0])
-                err = error(weights, cpu_weights)
-        else:
-            err = -1
 
         if b % disp_batches == 0:
             toc /= disp_batches
             if b != 0:
                 # 0 is used for warmup, ignored
-                r = Results(iter=b, time=toc, error=err,
+                r = Results(iter=b, time=toc, error=0,
                             bandwidth=size*2*(len(devs)-1)/len(devs)/toc/1e3)
-                logging.info('iter %d, %f sec, %f GB/sec per gpu, error %f' % (
-                    r.iter, r.time, r.bandwidth, r.error))
+                logging.info('iter %d, %f sec, %f GB/sec per gpu' % (
+                    r.iter, r.time, r.bandwidth))
                 bandwidth_sum += r.bandwidth
                 counter += 1
                 res.append(r)
             toc = 0
+    mx.profiler.set_state('stop')
     logging.info('Avg: %f GB/sec per gpu' % (bandwidth_sum / counter))
     return res
 

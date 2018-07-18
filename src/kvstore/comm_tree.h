@@ -272,6 +272,10 @@ class CommDeviceTree : public CommDevice {
 
   void Broadcast(int key, const NDArray& src,
                  const std::vector<NDArray*> dst, int priority) override {
+    if (dst.size() == 1) {
+      CopyFromTo(src, dst[0], priority);
+      return;
+    }
     if (!inited_) {
       // copy to a random device first
       int dev_id = key % dst.size();
