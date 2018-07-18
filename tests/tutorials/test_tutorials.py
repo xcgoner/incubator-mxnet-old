@@ -79,12 +79,15 @@ def _test_tutorial_nb(tutorial):
         os.makedirs(working_dir)
     try:
         notebook = nbformat.read(tutorial_path + '.ipynb', as_version=IPYTHON_VERSION)
+        # Adding a small delay to allow time for sockets to be freed
+        # stop-gap measure to battle the 1000ms linger of socket hard coded
+        # in the kernel API code
+        time.sleep(1.1) 
         if kernel is not None:
             eprocessor = ExecutePreprocessor(timeout=TIME_OUT, kernel_name=kernel)
         else:
             eprocessor = ExecutePreprocessor(timeout=TIME_OUT)
-        nb, stuff = eprocessor.preprocess(notebook, {'metadata': {'path': working_dir}})
-        print(stuff)
+        nb, _ = eprocessor.preprocess(notebook, {'metadata': {'path': working_dir}})
     except Exception as err:
         err_msg = str(err)
         errors.append(err_msg)
@@ -145,9 +148,24 @@ def test_gluon_autograd():
 def test_gluon_gluon():
     assert _test_tutorial_nb('gluon/gluon')
 
+def test_gluon_save_load_model():
+    assert _test_tutorial_nb('gluon/save_load_params')
+
 def test_gluon_hybrid():
     assert _test_tutorial_nb('gluon/hybrid')
+    
+def test_gluon_pretrained_models():
+    assert _test_tutorial_nb('gluon/pretrained_models')    
 
+def test_gluon_learning_rate_finder():
+    assert _test_tutorial_nb('gluon/learning_rate_finder')
+
+def test_gluon_learning_rate_schedules():
+    assert _test_tutorial_nb('gluon/learning_rate_schedules')
+
+def test_gluon_learning_rate_schedules_advanced():
+    assert _test_tutorial_nb('gluon/learning_rate_schedules_advanced')
+  
 def test_nlp_cnn():
     assert _test_tutorial_nb('nlp/cnn')
 
@@ -184,6 +202,9 @@ def test_python_kvstore():
 def test_python_types_of_data_augmentation():
     assert _test_tutorial_nb('python/types_of_data_augmentation')
 
+def test_python_profiler():
+    assert _test_tutorial_nb('python/profiler')
+    
 def test_sparse_row_sparse():
     assert _test_tutorial_nb('sparse/row_sparse')
 
@@ -201,3 +222,6 @@ def test_unsupervised_learning_gan():
 
 def test_vision_large_scale_classification():
     assert _test_tutorial_nb('vision/large_scale_classification')
+
+def test_vision_cnn_visualization():
+    assert _test_tutorial_nb('vision/cnn_visualization')

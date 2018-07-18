@@ -166,9 +166,6 @@ class KVStore(object):
         There is no synchronization between workers.
         One can use ``_barrier()`` to sync all workers.
 
-        Note: This api is not supported for kvstore with type dist_sync_allreduce.
-        Use :py:meth:`pushpull` instead.
-
         Parameters
         ----------
         key : str, int, or sequence of str or int
@@ -229,22 +226,16 @@ class KVStore(object):
         >>> print b
         <RowSparseNDArray 2x3 @cpu(0)>
         """
-        # debugging
-        # print('[{}] push: key: {}, val: {}'.format(self.rank, key, value))
-        
-        if self.type != 'dist_sync_allreduce':
-            ckeys, cvals, use_str_keys = _ctype_key_value(key, value)
-            if use_str_keys:
-                check_call(_LIB.MXKVStorePushEx(
-                    self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
-            else:
-                check_call(_LIB.MXKVStorePush(
-                    self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+        ckeys, cvals, use_str_keys = _ctype_key_value(key, value)
+        if use_str_keys:
+            check_call(_LIB.MXKVStorePushEx(
+                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
         else:
-            raise Exception("This api is not supported for kvstore with type %s. \
-                             Please use pushpull instead."%self.type)
+            check_call(_LIB.MXKVStorePush(
+                self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
 
-    def pull(self, key, out=None, priority=0):
+
+    def pull(self, key, out=None, priority=0, ignore_sparse=True):
         """ Pulls a single value or a sequence of values from the store.
 
         This function returns immediately after adding an operator to the engine.
@@ -256,11 +247,8 @@ class KVStore(object):
 
         The returned values are guaranteed to be the latest values in the store.
 
-        For `RowSparseNDArray` values, this call is ignored,
-        please use ``row_sparse_pull`` instead.
-
-        Note: This api is not supported for kvstore with type dist_sync_allreduce.
-        Use :py:meth:`pushpull` instead.
+        pull with `RowSparseNDArray` is not supported for dist kvstore.
+        Please use ``row_sparse_pull`` instead.
 
         Parameters
         ----------
@@ -274,6 +262,9 @@ class KVStore(object):
             The priority of the pull operation.
             Higher priority pull operations are likely to be executed before
             other pull actions.
+
+        ignore_sparse: bool, optional, default True
+            Whether to ignore sparse arrays in the request.
 
         Examples
         --------
@@ -307,140 +298,16 @@ class KVStore(object):
         [[ 2.  2.  2.]
         [ 2.  2.  2.]]
         """
-
         assert(out is not None)
-        if self.type != 'dist_sync_allreduce':
-            ckeys, cvals, use_str_keys = _ctype_key_value(key, out)
-            if use_str_keys:
-                check_call(_LIB.MXKVStorePullEx(
-                    self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
-            else:
-                check_call(_LIB.MXKVStorePull(
-                    self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
+        ckeys, cvals, use_str_keys = _ctype_key_value(key, out)
+        if use_str_keys:
+            check_call(_LIB.MXKVStorePullWithSparseEx(self.handle, mx_uint(len(ckeys)), ckeys,
+                                                      cvals, ctypes.c_int(priority),
+                                                      ctypes.c_bool(ignore_sparse)))
         else:
-            raise Exception("This api is not supported for kvstore with type %s. \
-                             Please use pushpull instead."%self.type)
-                             
-        # debugging
-        # print('[{}] pull: key: {}, val: {}'.format(self.rank, key, out))
-
-    def pushpull(self, key, ins, outs, priority=0):
-        """ allreduce a single or a sequence of key-value pairs from all nodes.
-
-        This function returns immediately after sending an allreduce request to mpi background
-        thread. The rank 0 node will collect allreduce request info from all nodes and ensure
-        every all reduce execution order is the same across all nodes.
-
-        Note: This api is only supported for kvstore with type dist_sync_allreduce
-
-        Parameters
-        ----------
-        key : str, int, or sequence of str or int
-              Keys.
-
-        ins : NDArray, or list of list of NDArray
-              Values corresponding to the keys to be allreduced.
-
-        outs : NDArray, or list of list of NDArray.
-               Values corresponding to the keys to store the result.
-
-        priority: int, optional
-            The priority of the push operation.
-            Higher priority push operations are likely to be executed before
-            other push actions.
-
-        Examples
-        --------
-        >>> # allreduce a single key-value pair on 2 nodes
-        >>> shape = (1, 3)
-        >>> in_ = mx.nd.ones(shape)
-        >>> out_ = mx.nd.zeros(shape)
-        >>> kv.pushpull('key', in_, out_, 0)
-        >>> print out_.asnumpy()
-        [[ 2.  2.  2.]
-         [ 2.  2.  2.]]
-        >>> # allreduce a list of key-value pairs
-        >>> keys = ['5', '7', '9']
-        >>> in_ = [mx.nd.ones(shape)]*len(keys)
-        >>> out_ = [mx.nd.zeros(shape)]*len(keys)
-        >>> print out_[1].asnumpy()
-        [[ 2.  2.  2.]
-        [ 2.  2.  2.]]
-        """
-        if self.type == 'dist_sync_allreduce':
-            ckeys, cinvals, use_str_keys = _ctype_key_value(key, ins)
-            ckeys, coutvals, use_str_keys = _ctype_key_value(key, outs)
-            if use_str_keys:
-                check_call(_LIB.MXKVStorePushPullEx(
-                    self.handle, mx_uint(len(ckeys)), ckeys, cinvals,
-                    coutvals, ctypes.c_int(priority)))
-            else:
-                check_call(_LIB.MXKVStorePushPull(
-                    self.handle, mx_uint(len(ckeys)), ckeys, cinvals,
-                    coutvals, ctypes.c_int(priority)))
-        else:
-            # ckeys, cvals, use_str_keys = _ctype_key_value(key, ins)
-            # if use_str_keys:
-            #     check_call(_LIB.MXKVStorePushEx(
-            #         self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
-            # else:
-            #     check_call(_LIB.MXKVStorePush(
-            #         self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
-            # ckeys, cvals, use_str_keys = _ctype_key_value(key, outs)
-            # if use_str_keys:
-            #     check_call(_LIB.MXKVStorePullEx(
-            #         self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
-            # else:
-            #     check_call(_LIB.MXKVStorePull(
-            #         self.handle, mx_uint(len(ckeys)), ckeys, cvals, ctypes.c_int(priority)))
-            raise Exception("This api is not supported for kvstore with type %s. \
-                             Please use push and pull instead."%self.type)
-
-    def broadcast(self, key, values, root_rank, priority=0):
-        """ Broadcast a single or a sequence of key-value pairs from root_rank to all other nodes
-
-        This function returns immediately after sending an broadcast request to mpi background
-        thread. In mpi background thread, it will invoke MPI_Bcast in every node.
-
-        Note: This api is only supported for kvstore with type dist_sync_allreduce
-
-        Parameters
-        ----------
-        key : str, int, or sequence of str or int
-              Keys.
-
-        values : NDArray, or list of list of NDArray
-                 Values corresponding to the keys to be broadcast.
-
-        root_rank: Decides in which rank the value will be broadcast.
-
-        priority: int, optional
-            The priority of the push operation.
-            Higher priority push operations are likely to be executed before
-            other push actions.
-
-        Examples:
-        >>> if kv.rank == 0:
-        >>>   value = mx.nd.ones(shape)
-        >>> else:
-        >>>   value = mx.nd.zeros(shape)
-        >>> if kv.rank != 0:
-        >>>   print value.asnumpy
-        >>> [[ 2.  2.  2.]
-            [ 2.  2.  2.]]
-        """
-        if self.type == 'dist_sync_allreduce':
-            ckeys, cinvals, use_str_keys = _ctype_key_value(key, values)
-            if use_str_keys:
-                check_call(_LIB.MXKVStoreBroadcastEx(
-                    self.handle, mx_uint(len(ckeys)), ckeys, cinvals,
-                    ctypes.c_int(root_rank), ctypes.c_int(priority)))
-            else:
-                check_call(_LIB.MXKVStoreBroadcast(
-                    self.handle, mx_uint(len(ckeys)), ckeys, cinvals,
-                    ctypes.c_int(root_rank), ctypes.c_int(priority)))
-        else:
-            raise Exception("This api is not supported for kvstore with type %s"%self.type)
+            check_call(_LIB.MXKVStorePullWithSparse(self.handle, mx_uint(len(ckeys)), ckeys,
+                                                    cvals, ctypes.c_int(priority),
+                                                    ctypes.c_bool(ignore_sparse)))
 
     def row_sparse_pull(self, key, out=None, priority=0, row_ids=None):
         """ Pulls a single RowSparseNDArray value or a sequence of RowSparseNDArray values \
@@ -452,8 +319,6 @@ class KVStore(object):
         same input key(s) are finished.
 
         The returned values are guaranteed to be the latest values in the store.
-
-        Note: This api is not supported for kvstore with type dist_sync_allreduce
 
         Parameters
         ----------
@@ -498,8 +363,6 @@ class KVStore(object):
         """
         assert(out is not None)
         assert(row_ids is not None)
-        if self.type == 'dist_sync_allreduce':
-            raise Exception("This api is not supported for kvstore with type %s"%self.type)
         if isinstance(row_ids, NDArray):
             row_ids = [row_ids]
         assert(isinstance(row_ids, list)), \
@@ -574,7 +437,7 @@ class KVStore(object):
             Other keys in this dictionary are optional and specific to the type
             of gradient compression.
         """
-        if ('device' in self.type) or ('dist' in self.type) and ('allreduce' not in self.type): # pylint: disable=unsupported-membership-test
+        if ('device' in self.type) or ('dist' in self.type): # pylint: disable=unsupported-membership-test
             ckeys, cvals = _ctype_dict(compression_params)
             check_call(_LIB.MXKVStoreSetGradientCompression(self.handle,
                                                             mx_uint(len(compression_params)),
@@ -589,8 +452,6 @@ class KVStore(object):
         If using multiple machines and this operation is invoked from a worker node,
         it will serialized the optimizer with pickle and send it to all servers.
         The function returns after all servers have been updated.
-        In kvstore with dist_sync_allreduce, this api only updates the local optimizer
-        same as single machine.
 
         Parameters
         ----------
@@ -618,7 +479,7 @@ class KVStore(object):
         check_call(_LIB.MXKVStoreIsWorkerNode(ctypes.byref(is_worker)))
 
         # pylint: disable=invalid-name
-        if ('dist' in self.type) and ('mpi' not in self.type) and is_worker.value: # pylint: disable=unsupported-membership-test
+        if 'dist' in self.type and is_worker.value: # pylint: disable=unsupported-membership-test
             # send the optimizer to server
             try:
                 # use ASCII protocol 0, might be slower, but not a big ideal
@@ -766,11 +627,8 @@ class KVStore(object):
         body : str
             the body of the command.
         """
-        if self.type == 'dist_sync_allreduce':
-            raise Exception("This api is not supported for kvstore with type %s"%self.type)
-        else:
-            check_call(_LIB.MXKVStoreSendCommmandToServers(
-                self.handle, mx_uint(head), c_str(body)))
+        check_call(_LIB.MXKVStoreSendCommmandToServers(
+            self.handle, mx_uint(head), c_str(body)))
 
 def create(name='local'):
     """Creates a new KVStore.
@@ -798,14 +656,9 @@ def create(name='local'):
     No two updates happen on the same weight at the same time. However, the order is not
     guaranteed.
 
-    ``dist_sync_allreduce``: Behaves similarly to dist_sync but with some major difference.
-    With ``dist_sync_allreduce``, no parameter server configured, replace push and pull apis with
-    pushpull.
-
     Parameters
     ----------
-    name : {'local', 'device', 'nccl', 'dist_sync', 'dist_device_sync', 'dist_async',
-            'dist_sync_allreduce'}
+    name : {'local', 'device', 'nccl', 'dist_sync', 'dist_device_sync', 'dist_async'}
         The type of KVStore.
     Returns
     -------

@@ -116,6 +116,12 @@ int MXEngineSetBulkSize(int bulk_size, int* prev_bulk_size) {
   API_END();
 }
 
+int MXGetGPUCount(int* out) {
+  API_BEGIN();
+  *out = Context::GetGPUCount();
+  API_END();
+}
+
 int MXGetVersion(int *out) {
   API_BEGIN();
   *out = static_cast<int>(MXNET_VERSION);
@@ -863,15 +869,15 @@ int MXKVStorePull(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority);
+  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority, true);
   API_END();
 }
 
 int MXKVStorePullEx(KVStoreHandle handle,
-                  mx_uint num,
-                  const char** keys,
-                  NDArrayHandle* vals,
-                  int priority) {
+                    mx_uint num,
+                    const char** keys,
+                    NDArrayHandle* vals,
+                    int priority) {
   API_BEGIN();
   std::vector<std::string> v_keys(num);
   std::vector<NDArray*> v_vals(num);
@@ -879,54 +885,16 @@ int MXKVStorePullEx(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority);
+  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority, true);
   API_END();
 }
 
-int MXKVStorePushPull(KVStoreHandle handle,
-                      mx_uint num,
-                      const int *keys,
-                      NDArrayHandle *in_vals,
-                      NDArrayHandle *out_vals,
-                      int priority) {
-  API_BEGIN();
-  std::vector<int> v_keys(num);
-  std::vector<NDArray*> v_invals(num);
-  std::vector<NDArray*> v_outvals(num);
-  for (mx_uint i = 0; i < num; ++i) {
-    v_keys[i] = keys[i];
-    v_invals[i] = static_cast<NDArray*>(in_vals[i]);
-    v_outvals[i] = static_cast<NDArray*>(out_vals[i]);
-  }
-  static_cast<KVStore*>(handle)->PushPull(v_keys, v_invals, v_outvals, priority);
-  API_END();
-}
-
-int MXKVStorePushPullEx(KVStoreHandle handle,
-                        mx_uint num,
-                        const char **keys,
-                        NDArrayHandle *in_vals,
-                        NDArrayHandle *out_vals,
-                        int priority) {
-  API_BEGIN();
-  std::vector<std::string> v_keys(num);
-  std::vector<NDArray*> v_invals(num);
-  std::vector<NDArray*> v_outvals(num);
-  for (mx_uint i = 0; i < num; ++i) {
-    v_keys[i] = keys[i];
-    v_invals[i] = static_cast<NDArray*>(in_vals[i]);
-    v_outvals[i] = static_cast<NDArray*>(out_vals[i]);
-  }
-  static_cast<KVStore*>(handle)->PushPull(v_keys, v_invals, v_outvals, priority);
-  API_END();
-}
-
-int MXKVStoreBroadcast(KVStoreHandle handle,
-                       mx_uint num,
-                       const int *keys,
-                       NDArrayHandle *vals,
-                       int root_rank,
-                       int priority) {
+int MXKVStorePullWithSparse(KVStoreHandle handle,
+                            mx_uint num,
+                            const int* keys,
+                            NDArrayHandle* vals,
+                            int priority,
+                            bool ignore_sparse) {
   API_BEGIN();
   std::vector<int> v_keys(num);
   std::vector<NDArray*> v_vals(num);
@@ -934,16 +902,16 @@ int MXKVStoreBroadcast(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Broadcast(v_keys, v_vals, root_rank, priority);
+  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority, ignore_sparse);
   API_END();
 }
 
-int MXKVStoreBroadcastEx(KVStoreHandle handle,
-                         mx_uint num,
-                         const char **keys,
-                         NDArrayHandle *vals,
-                         int root_rank,
-                         int priority) {
+int MXKVStorePullWithSparseEx(KVStoreHandle handle,
+                              mx_uint num,
+                              const char** keys,
+                              NDArrayHandle* vals,
+                              int priority,
+                              bool ignore_sparse) {
   API_BEGIN();
   std::vector<std::string> v_keys(num);
   std::vector<NDArray*> v_vals(num);
@@ -951,7 +919,7 @@ int MXKVStoreBroadcastEx(KVStoreHandle handle,
     v_keys[i] = keys[i];
     v_vals[i] = static_cast<NDArray*>(vals[i]);
   }
-  static_cast<KVStore*>(handle)->Broadcast(v_keys, v_vals, root_rank, priority);
+  static_cast<KVStore*>(handle)->Pull(v_keys, v_vals, priority, ignore_sparse);
   API_END();
 }
 
@@ -1350,7 +1318,6 @@ int MXRtcCudaKernelCall(CudaKernelHandle handle, int dev_id, void** args,
 #endif
   API_END();
 }
-
 
 int MXNDArrayGetSharedMemHandle(NDArrayHandle handle, int* shared_pid, int* shared_id) {
   API_BEGIN();

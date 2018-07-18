@@ -370,6 +370,11 @@ class Embedding(HybridBlock):
     r"""Turns non-negative integers (indexes/tokens) into dense vectors
     of fixed size. eg. [4, 20] -> [[0.25, 0.1], [0.6, -0.2]]
 
+    Note: if `sparse_grad` is set to True, the gradient w.r.t weight will be
+    sparse. Only a subset of optimizers support sparse gradients, including SGD, AdaGrad
+    and Adam. By default lazy updates is turned on, which may perform differently
+    from standard updates. For more details, please check the Optimization API at:
+    https://mxnet.incubator.apache.org/api/python/optimization/optimization.html
 
     Parameters
     ----------
@@ -381,7 +386,8 @@ class Embedding(HybridBlock):
         Data type of output embeddings.
     weight_initializer : Initializer
         Initializer for the `embeddings` matrix.
-
+    sparse_grad: bool
+        If True, gradient w.r.t. weight will be a 'row_sparse' NDArray.
 
     Inputs:
         - **data**: (N-1)-D tensor with shape: `(x1, x2, ..., xN-1)`.
@@ -390,13 +396,14 @@ class Embedding(HybridBlock):
         - **out**: N-D tensor with shape: `(x1, x2, ..., xN-1, output_dim)`.
     """
     def __init__(self, input_dim, output_dim, dtype='float32',
-                 weight_initializer=None, **kwargs):
+                 weight_initializer=None, sparse_grad=False, **kwargs):
         super(Embedding, self).__init__(**kwargs)
+        grad_stype = 'row_sparse' if sparse_grad else 'default'
         self._kwargs = {'input_dim': input_dim, 'output_dim': output_dim,
-                        'dtype': dtype}
+                        'dtype': dtype, 'sparse_grad': sparse_grad}
         self.weight = self.params.get('weight', shape=(input_dim, output_dim),
                                       init=weight_initializer, dtype=dtype,
-                                      allow_deferred_init=True)
+                                      allow_deferred_init=True, grad_stype=grad_stype)
 
     def hybrid_forward(self, F, x, weight):
         return F.Embedding(x, weight, name='fwd', **self._kwargs)

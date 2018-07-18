@@ -32,15 +32,20 @@ Select API:&nbsp;
     * [60-Minute Gluon Crash Course](http://gluon-crash-course.mxnet.io/) <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/External_link_font_awesome.svg" alt="External link" height="15px" style="margin: 0px 0px 3px 3px;"/>
     * [MNIST Handwritten Digit Classification](/tutorials/gluon/mnist.html)
 * Models
+    * [Model Zoo: using pre-trained models](/tutorials/gluon/pretrained_models.html)
     * [Linear Regression](http://gluon.mxnet.io/chapter02_supervised-learning/linear-regression-gluon.html) <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/External_link_font_awesome.svg" alt="External link" height="15px" style="margin: 0px 0px 3px 3px;"/>
-    * [MNIST Handwritten Digit Classification](/tutorials/gluon/mnist.html)
     * [Word-level text generation with RNN, LSTM and GRU](http://gluon.mxnet.io/chapter05_recurrent-neural-networks/rnns-gluon.html) <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/External_link_font_awesome.svg" alt="External link" height="15px" style="margin: 0px 0px 3px 3px;"/>
     * [Visual Question Answering](http://gluon.mxnet.io/chapter08_computer-vision/visual-question-answer.html) <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/External_link_font_awesome.svg" alt="External link" height="15px" style="margin: 0px 0px 3px 3px;"/>
 * Practitioner Guides
     * [Multi-GPU training](http://gluon.mxnet.io/chapter07_distributed-learning/multiple-gpus-gluon.html) <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/External_link_font_awesome.svg" alt="External link" height="15px" style="margin: 0px 0px 3px 3px;"/>
-    * [Checkpointing and Model Serialization (a.k.a. saving and loading)](http://gluon.mxnet.io/chapter03_deep-neural-networks/serialization.html) <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/External_link_font_awesome.svg" alt="External link" height="15px" style="margin: 0px 0px 3px 3px;"/>
+    * [Checkpointing and Model Serialization (a.k.a. saving and loading)](/tutorials/gluon/save_load_params.html) <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/External_link_font_awesome.svg" alt="External link" height="15px" style="margin: 0px 0px 3px 3px;"/> ([Alternative](http://gluon.mxnet.io/chapter03_deep-neural-networks/serialization.html))
     * [Inference using an ONNX model](/tutorials/onnx/inference_on_onnx_model.html)
     * [Fine-tuning an ONNX model on Gluon](/tutorials/onnx/fine_tuning_gluon.html)
+    * [Visualizing Decisions of Convolutional Neural Networks](/tutorials/vision/cnn_visualization.html)
+    * [Learning Rate Finder](/tutorials/gluon/learning_rate_finder.html)
+    * [Learning Rate Schedules](/tutorials/gluon/learning_rate_schedules.html)
+    * [Advanced Learning Rate Schedules](/tutorials/gluon/learning_rate_schedules_advanced.html)
+    * [Profiling MXNet Models](/tutorials/python/profiler.html)
 * API Guides
     * Core APIs
         * NDArray
@@ -68,6 +73,7 @@ Select API:&nbsp;
             * [AutoGrad API with Python control flow](http://gluon-crash-course.mxnet.io/autograd.html) <img src="https://upload.wikimedia.org/wikipedia/commons/6/6a/External_link_font_awesome.svg" alt="External link" height="15px" style="margin: 0px 0px 3px 3px;"/>
         * Data
             * [Datasets and DataLoaders](/tutorials/gluon/datasets.html)
+            * [Applying Data Augmentation](/tutorials/gluon/data_augmentation.html)
             * [Data Augmentation with Masks (for Object Segmentation)](https://mxnet.incubator.apache.org/tutorials/python/data_augmentation_with_masks.html)
 </div> <!--end of gluon-->
 
@@ -83,16 +89,18 @@ Select API:&nbsp;
     * [Movie Review Classification using Convolutional Networks](/tutorials/nlp/cnn.html)
     * [Generative Adversarial Networks (GANs)](/tutorials/unsupervised_learning/gan.html)
     * [Recommender Systems using Matrix Factorization](/tutorials/python/matrix_factorization.html)
-    * [Speech Recognition with Connectionist Temporal Classification Loss](https://mxnet.incubator.apache.org/tutorials/speech_recognition/ctc.html)
+    * [Speech Recognition with Connectionist Temporal Classification Loss](/tutorials/speech_recognition/ctc.html)
 * Practitioner Guides
+    * [Predicting on new images using a pre-trained ImageNet model](/tutorials/python/predict_image.html)
     * [Fine-Tuning a pre-trained ImageNet model with a new dataset](/faq/finetune.html)
     * [Large-Scale Multi-Host Multi-GPU Image Classification](/tutorials/vision/large_scale_classification.html)
+    * [Importing an ONNX model into MXNet](/tutorials/onnx/super_resolution.html)
 * API Guides
     * Core APIs
         * NDArray
             * [NDArray API](/tutorials/gluon/ndarray.html)
             * [Advanced NDArray API](/tutorials/basic/ndarray.html)
-            * [NDArray Indexing](https://mxnet.incubator.apache.org/tutorials/basic/ndarray_indexing.html)
+            * [NDArray Indexing](/tutorials/basic/ndarray_indexing.html)
             * Sparse NDArray
                 * [Sparse Gradient Updates (RowSparseNDArray)](/tutorials/sparse/row_sparse.html)
                 * [Compressed Sparse Row Storage Format (CSRNDArray)](/tutorials/sparse/csr.html)
@@ -103,19 +111,22 @@ Select API:&nbsp;
             * [Key-Value Store API](/tutorials/python/kvstore.html)
     * Module APIs
         * [Module API](/tutorials/basic/module.html)
-        * [Data Iterators](/tutorials/basic/data.html)
+        * Data
+            * [Data Iterators](/tutorials/basic/data.html)
+            * [Applying Data Augmentation](/tutorials/python/data_augmentation.html)
+            * [Types of Data Augmentation](/tutorials/python/types_of_data_augmentation.html)
 </div> <!--end of module-->
 
 <hr>
 
 ## Scala Tutorials
-
+* [MXNet-Scala Tutorials Overview](/tutorials/scala/)
 * Getting Started
     * [MXNet and JetBrain's IntelliJ](/tutorials/scala/mxnet_scala_on_intellij.html)
 * Models
     * [MNIST Handwritten Digit Recognition with Fully Connected Network](/tutorials/scala/mnist.html)
     * [Barack Obama speech generation with Character-level LSTM](/tutorials/scala/char_lstm.html)
-
+* [MXNet-Scala  Examples](https://github.com/apache/incubator-mxnet/tree/master/scala-package/examples/src/main/scala/org/apache/mxnetexamples)
 <hr>
 
 ## C++ Tutorials
@@ -139,9 +150,9 @@ Select API:&nbsp;
     * [Callbacks](/tutorials/r/CallbackFunction.html)
     * [Custom Data Iterators](/tutorials/r/CustomIterator.html)
     * [Custom Loss Functions](/tutorials/r/CustomLossFunction.html)
- 
+
 <hr>
- 
+
 ## Contributing Tutorials
 
 We really appreciate contributions, and tutorials are a great way to share your knowledge and help the community. After you have followed [these steps](https://github.com/apache/incubator-mxnet/tree/master/example#contributing), please submit a pull request on Github.
