@@ -114,6 +114,34 @@ def split_and_load(data, ctx_list, batch_axis=0, even_split=True):
     slices = split_data(data, len(ctx_list), batch_axis, even_split)
     return [i.as_in_context(ctx) for i, ctx in zip(slices, ctx_list)]
 
+def split_and_load_inplace(data, data_list, batch_axis=0, even_split=True):
+    """Splits an NDArray into `len(data_list)` slices along `batch_axis` and loads
+    each slice to one context in `data_list`.
+
+    Parameters
+    ----------
+    data : NDArray
+        A batch of data.
+    data_list : list of data in different Context
+        A list of NDArray.
+    batch_axis : int, default 0
+        The axis along which to slice.
+    even_split : bool, default True
+        Whether to force all slices to have the same number of elements.
+
+    Returns
+    -------
+    list of NDArray
+        Each corresponds to a context in `data_list`.
+    """
+    if not isinstance(data, ndarray.NDArray):
+        data = ndarray.array(data, ctx=data_list[0].context)
+    if len(data_list) == 1:
+        data.copyto(data_list[0])
+    else:
+        slices = split_data(data, len(data_list), batch_axis, even_split)
+        for i, d in zip(slices, data_list):
+            i.copyto(d)
 
 def clip_global_norm(arrays, max_norm):
     """Rescales NDArrays so that the sum of their 2-norm is smaller than `max_norm`.
