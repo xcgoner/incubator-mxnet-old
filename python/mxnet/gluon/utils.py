@@ -37,6 +37,8 @@ import numpy as np
 
 from .. import ndarray
 
+import gc
+
 def split_data(data, num_slice, batch_axis=0, even_split=True):
     """Splits an NDArray into `num_slice` slices along `batch_axis`.
     Usually used for data parallelism where each slices is sent
@@ -142,6 +144,45 @@ def split_and_load_inplace(data, data_list, batch_axis=0, even_split=True):
         slices = split_data(data, len(data_list), batch_axis, even_split)
         for i, d in zip(slices, data_list):
             i.copyto(d)
+
+class MultiDeviceLoader(object):
+    def __init__(self, pool_size):
+        self._pool_size = pool_size
+        self._pool = []
+        self._pool_counter = 0
+
+    def split_and_load(self, data, ctx_list, batch_axis=0, even_split=True):
+        if not isinstance(data, ndarray.NDArray):
+            data = ndarray.array(data, ctx=ctx_list[0])
+        
+        if self._pool_counter < self._pool_size:
+            if len(ctx_list) == 1:
+                data_list = [data.as_in_context(ctx_list[0])]
+            else:
+                slices = split_data(data, len(ctx_list), batch_axis, even_split)
+                data_list = [i.as_in_context(ctx) for i, ctx in zip(slices, ctx_list)]
+            self._pool.append(data_list)
+            
+        else:
+            data_list = self._pool[self._pool_counter % self._pool_size]
+            if len(ctx_list) == 1:
+                data.copyto(data_list[0])
+            else:
+                slices = split_data(data, len(data_list), batch_axis, even_split)
+                for i, d in zip(slices, data_list):
+                    i.copyto(d)
+        self._pool_counter = self._pool_counter + 1
+        if self._pool_counter == self._pool_size * 100:
+            self._pool_counter = self._pool_size
+        return data_list
+    def reset(self):
+        for data_list in self._pool:
+            for d in data_list:
+                del d
+            del data_list
+        self._pool = []
+        self._pool_counter = 0
+        gc.collect()
 
 def clip_global_norm(arrays, max_norm):
     """Rescales NDArrays so that the sum of their 2-norm is smaller than `max_norm`.
