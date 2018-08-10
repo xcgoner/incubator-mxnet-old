@@ -109,6 +109,8 @@ def run(network, optimizer, gpus, kv_store, image_shape, disp_batches,
 
     Results = namedtuple('Results', ['iter', 'time', 'bandwidth', 'error'])
     res = []
+    bandwidth_sum = 0.0
+    counter = 0
     for b in range(0, num_batches+1):
         tic = time.time()
         for i,g in enumerate(grads):
@@ -138,10 +140,13 @@ def run(network, optimizer, gpus, kv_store, image_shape, disp_batches,
                             bandwidth=size*2*(len(devs)-1)/len(devs)/toc/1e3)
                 logging.info('iter %d, %f sec, %f GB/sec per gpu, error %f' % (
                     r.iter, r.time, r.bandwidth, r.error))
+                bandwidth_sum += r.bandwidth
+                counter += 1
                 res.append(r)
             toc = 0
+    logging.info('Avg: %f GB/sec per gpu' % (bandwidth_sum / counter))
     return res
 
 if __name__ == "__main__":
-    args = parse_args();
+    args = parse_args()
     run(**vars(args))

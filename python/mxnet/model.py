@@ -55,6 +55,25 @@ BatchEndParam = namedtuple('BatchEndParams',
                             'eval_metric',
                             'locals'])
 
+def _create_sparse_kvstore(kvstore):
+    """Create kvstore assuming some parameters' storage types are row_sparse.
+
+    Parameters
+    ----------
+    kvstore : KVStore or str
+        The kvstore.
+    """
+    # always update on kvstore
+    update_on_kvstore = True
+    if isinstance(kvstore, kvs.KVStore):
+        kv = kvstore
+    elif isinstance(kvstore, str):
+        kv = kvs.create(kvstore)
+    else:
+        raise TypeError("Cannot create '%s' KVStore with row_sparse parameters. "
+                        "The type must be KVStore or str." % kvstore)
+    return (kv, update_on_kvstore)
+
 def _create_kvstore(kvstore, num_device, arg_params):
     """Create kvstore
     This function select and create a proper kvstore if given the kvstore type.
@@ -73,8 +92,6 @@ def _create_kvstore(kvstore, num_device, arg_params):
         kv = None
     elif isinstance(kvstore, kvs.KVStore):
         kv = kvstore
-        if kv.type == 'dist_sync_allreduce':
-            update_on_kvstore = False
     elif isinstance(kvstore, str):
         # create kvstore using the string type
         if num_device is 1 and 'dist' not in kvstore:
@@ -88,8 +105,6 @@ def _create_kvstore(kvstore, num_device, arg_params):
                                arg_params.values())
                 if max_size > 1024 * 1024 * 16:
                     update_on_kvstore = False
-            if kvstore == 'dist_sync_allreduce':
-                update_on_kvstore = False
     else:
         raise TypeError('kvstore must be KVStore, str or None')
 
@@ -102,10 +117,7 @@ def _initialize_kvstore(kvstore, param_arrays, arg_params, param_names, update_o
     """Initialize kvstore"""
     for idx, param_on_devs in enumerate(param_arrays):
         name = param_names[idx]
-        if 'allreduce' not in kvstore.type:
-            kvstore.init(name, arg_params[name])
-        else:
-            kvstore.broadcast(name, param_on_devs, 0, priority=-idx)
+        kvstore.init(name, arg_params[name])
 
         if update_on_kvstore:
             kvstore.pull(name, param_on_devs, priority=-idx)
@@ -152,13 +164,10 @@ def _update_params(param_arrays, grad_arrays, updater, num_device,
         index = i
         if kvstore:
             name = param_names[index]
-            if 'allreduce' not in kvstore.type:
-                # push gradient, priority is negative index
-                kvstore.push(name, grad_list, priority=-index)
-                # pull back the sum gradients, to the same locations.
-                kvstore.pull(name, grad_list, priority=-index)
-            else:
-                kvstore.pushpull(name, grad_list, grad_list, priority=-index)
+            # push gradient, priority is negative index
+            kvstore.push(name, grad_list, priority=-index)
+            # pull back the sum gradients, to the same locations.
+            kvstore.pull(name, grad_list, priority=-index)
         for k, p in enumerate(zip(arg_list, grad_list)):
             # faked an index here, to make optimizer create diff
             # state for the same index but on diff devs, TODO(mli)

@@ -170,81 +170,21 @@ class KVStore {
    * \param keys the list of keys
    * \param values the list of buffers for the pulled data, they should be preallocated
    * \param priority Priority of the action.
+   * \param ignore_sparse whether to ignore sparse arrays in the request
    */
   virtual void Pull(const std::vector<int>& keys,
                     const std::vector<NDArray*>& values,
-                    int priority = 0) = 0;
+                    int priority = 0, bool ignore_sparse = true) = 0;
   /*!
    * \brief pull a list of key-value pairs from the store
    * \param keys the list of keys in string format
    * \param values the list of buffers for the pulled data, they should be preallocated
    * \param priority Priority of the action.
+   * \param ignore_sparse whether to ignore sparse arrays in the request
    */
   virtual void Pull(const std::vector<std::string>& str_keys,
                     const std::vector<NDArray*>& values,
-                    int priority = 0) = 0;
-
-  /*!
-   * \brief push and pull a list of key-value pairs from the all the nodes
-   *        It will aggregate the values from all the nodes. It shared the same
-   *        syntax as allreduce
-   * \param keys the list of keys
-   * \param in_values the list of buffers to be allreduced
-   * \param out_values the list of buffers to store the result
-   * \param priority Priority of the action
-   */
-  virtual void PushPull(const std::vector<int> &keys,
-                        const std::vector<NDArray*> &in_values,
-                        const std::vector<NDArray*> &out_values,
-                        int priority = 0) {
-      LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
-    }
-
-  /*!
-   * \brief push and pull a list of key-value pairs from the all the nodes
-   *        It will aggregate the values from all the nodes. It shared the same
-   *        syntax as allreduce
-   * \param keys the list of keys in string format
-   * \param in_values the list of buffers to be allreduced
-   * \param out_values the list of buffers to store the result
-   * \param priority Priority of the action
-   */
-  virtual void PushPull(const std::vector<std::string> &str_keys,
-                        const std::vector<NDArray*> &in_values,
-                        const std::vector<NDArray*> &out_values,
-                        int priority = 0) {
-      LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
-    }
-
-  /*!
-   * \brief broadcast a list of key-value pairs from root_rank node to all other nodes
-   * \param keys the list of keys
-   * \param values the list of buffers to be broadcast in root_rank node, for other nodes
-   *        it's the list of bufferes to store the result
-   * \param root_rank indicates the data of which node will be broadcasted.
-   * \param priority Priority of the action
-   */
-  virtual void Broadcast(const std::vector<int> &keys,
-                         const std::vector<NDArray*> &values,
-                         int root_rank,
-                         int priority = 0) {
-      LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
-    }
-
-  /*!
-   * \brief broadcast a list of key-value pairs from root_rank node to all other nodes
-   * \param keys the list of keys
-   * \param values the list of buffers to be broadcast in root_rank node, for other nodes
-   *        it's the list of bufferes to store the result
-   * \param root_rank indicates the data of which node will be broadcasted.
-   * \param priority Priority of the action
-   */
-  virtual void Broadcast(const std::vector<std::string> &str_keys,
-                         const std::vector<NDArray*> &values,
-                         int root_rank,
-                         int priority = 0) {
-      LOG(FATAL) << "The api is not supported in kvstore with type " << type_;
-    }
+                    int priority = 0, bool ignore_sparse = true) = 0;
 
   /*!
    * \brief pull a list of key-value pairs from the store.
@@ -291,6 +231,7 @@ class KVStore {
     CHECK(updater) << "invalid updater";
     updater_ = updater;
   }
+
   /*!
    * \brief set an updater with string keys
    *

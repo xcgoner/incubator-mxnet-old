@@ -20,27 +20,51 @@
 """Dataset generator."""
 __all__ = ['DataLoader']
 
-import multiprocessing
-import multiprocessing.queues
-from multiprocessing.reduction import ForkingPickler
 import pickle
 import io
 import sys
+import multiprocessing
+import multiprocessing.queues
+from multiprocessing.reduction import ForkingPickler
 import numpy as np
+
+try:
+    import multiprocessing.resource_sharer
+except ImportError:
+    pass
 
 from . import sampler as _sampler
 from ... import nd, context
 
+if sys.platform == 'darwin' or sys.platform == 'win32':
+    def rebuild_ndarray(*args):
+        """Rebuild ndarray from pickled shared memory"""
+        # pylint: disable=no-value-for-parameter
+        return nd.NDArray(nd.ndarray._new_from_shared_mem(*args))
 
-def rebuild_ndarray(*args):
-    """Rebuild ndarray from pickled shared memory"""
-    # pylint: disable=no-value-for-parameter
-    return nd.NDArray(nd.ndarray._new_from_shared_mem(*args))
+    def reduce_ndarray(data):
+        """Reduce ndarray to shared memory handle"""
+        return rebuild_ndarray, data._to_shared_mem()
+else:
+    def rebuild_ndarray(pid, fd, shape, dtype):
+        """Rebuild ndarray from pickled shared memory"""
+        # pylint: disable=no-value-for-parameter
+        if sys.version_info[0] == 2:
+            fd = multiprocessing.reduction.rebuild_handle(fd)
+        else:
+            fd = fd.detach()
+        return nd.NDArray(nd.ndarray._new_from_shared_mem(pid, fd, shape, dtype))
 
-
-def reduce_ndarray(data):
-    """Reduce ndarray to shared memory handle"""
-    return rebuild_ndarray, data._to_shared_mem()
+    def reduce_ndarray(data):
+        """Reduce ndarray to shared memory handle"""
+        # keep a local ref before duplicating fd
+        data = data.as_in_context(context.Context('cpu_shared', 0))
+        pid, fd, shape, dtype = data._to_shared_mem()
+        if sys.version_info[0] == 2:
+            fd = multiprocessing.reduction.reduce_handle(fd)
+        else:
+            fd = multiprocessing.reduction.DupFd(fd)
+        return rebuild_ndarray, (pid, fd, shape, dtype)
 
 ForkingPickler.register(nd.NDArray, reduce_ndarray)
 
@@ -127,6 +151,7 @@ def default_mp_batchify_fn(data):
 
 def worker_loop(dataset, key_queue, data_queue, batchify_fn, slice_start, slice_end):
     """Worker loop for multiprocessing DataLoader."""
+    dataset._fork()
     while True:
         idx, samples = key_queue.get()
         if idx is None:
@@ -146,7 +171,7 @@ class _MultiWorkerIter(object):
         self._batchify_fn = batchify_fn
         self._batch_sampler = batch_sampler
         self._key_queue = Queue()
-        self._data_queue = SimpleQueue()
+        self._data_queue = Queue() if sys.version_info[0] <= 2 else SimpleQueue()
         self._data_buffer = {}
         self._rcvd_idx = 0
         self._sent_idx = 0
@@ -157,7 +182,7 @@ class _MultiWorkerIter(object):
         for _ in range(self._num_workers):
             worker = multiprocessing.Process(
                 target=worker_loop,
-                args=(self._dataset, self._key_queue, self._data_queue, self._batchify_fn, slice_start,slice_end))
+                args=(self._dataset, self._key_queue, self._data_queue, self._batchify_fn, slice_start, slice_end))
             worker.daemon = True
             worker.start()
             workers.append(worker)
@@ -252,19 +277,20 @@ class DataLoader(object):
                 else:
                     data = np.asarray(data)
                     return nd.array(data, dtype=data.dtype)
+
     num_workers : int, default 0
         The number of multiprocessing workers to use for data preprocessing.
         `num_workers > 0` is not supported on Windows yet.
+
     kvstore : str or KVStore
         kvstore type for multi-gpu and distributed training. See help on
         :any:`mxnet.kvstore.create` for more information.
-
     """
     def __init__(self, dataset, batch_size=None, shuffle=False, sampler=None,
                  last_batch=None, batch_sampler=None, batchify_fn=None,
                  num_workers=0, kvstore=None):
         self._dataset = dataset
-        # assume the batch can be evenly assigned
+
         if kvstore is None or isinstance(kvstore, str):
             self._slice_start = 0
             self._slice_end = int(batch_size)
@@ -280,9 +306,6 @@ class DataLoader(object):
             if sampler is None:
                 if shuffle:
                     sampler = _sampler.RandomSampler(len(dataset))
-                    # print('Using different subset on different workers')
-                    # print('num_workers=', kv_num_workers)
-                    # sampler = _sampler.RandomPermuteSampler(len(dataset), kv_num_workers, kv_rank)
                 else:
                     sampler = _sampler.SequentialSampler(len(dataset))
             elif shuffle:
@@ -312,7 +335,6 @@ class DataLoader(object):
             return generator()
 
         # multi-worker
-        # TODO: kvstore, multiple workers
         return _MultiWorkerIter(self._num_workers, self._dataset,
                                 self._batchify_fn, self._batch_sampler,
                                 self._slice_start, self._slice_end)

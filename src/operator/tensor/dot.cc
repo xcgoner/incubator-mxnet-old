@@ -29,7 +29,7 @@ namespace op {
 DMLC_REGISTER_PARAMETER(DotParam);
 
 NNVM_REGISTER_OP(dot)
-.add_alias("_sparse_dot")  // alias for op registration under mxnet.ndarray.sparse
+MXNET_ADD_SPARSE_OP_ALIAS(dot)
 .describe(R"doc(Dot product of two arrays.
 
 ``dot``'s behavior depends on the input array dimensions:
@@ -57,13 +57,22 @@ forward_stype option for output storage type. Implemented sparse operations incl
 - dot(default, default, transpose_a=True/False, transpose_b=True/False) = default
 - dot(csr, default, transpose_a=True) = default
 - dot(csr, default, transpose_a=True) = row_sparse
+- dot(csr, default) = default
 - dot(csr, row_sparse) = default
 - dot(default, csr) = csr (CPU only)
-- dot(default, csr, forward_stype='default') = default (GPU only)
-- dot(default, csr, transpose_b=True, forward_stype='default') = default (GPU only)
+- dot(default, csr, forward_stype='default') = default
+- dot(default, csr, transpose_b=True, forward_stype='default') = default
 
 If the combination of input storage types and forward_stype does not match any of the
 above patterns, ``dot`` will fallback and generate output with default storage.
+
+.. Note::
+
+    If the storage type of the lhs is "csr", the storage type of gradient w.r.t rhs will be
+    "row_sparse". Only a subset of optimizers support sparse gradients, including SGD, AdaGrad
+    and Adam. Note that by default lazy updates is turned on, which may perform differently
+    from standard updates. For more details, please check the Optimization API at:
+    https://mxnet.incubator.apache.org/api/python/optimization/optimization.html
 
 )doc" ADD_FILELINE)
 .set_num_inputs(2)

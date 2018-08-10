@@ -6,7 +6,7 @@
     <parent>
         <artifactId>mxnet-parent_2.11</artifactId>
         <groupId>org.apache.mxnet</groupId>
-        <version>1.2.0-SNAPSHOT</version>
+        <version>1.3.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -14,6 +14,18 @@
     <name>MXNet Scala Package - Inference</name>
 
     <profiles>
+        <profile>
+            <id>unittest</id>
+            <properties>
+                <skiptest>false</skiptest>
+            </properties>
+        </profile>
+        <profile>
+            <id>integrationtest</id>
+            <properties>
+                <skiptest>true</skiptest>
+            </properties>
+        </profile>
         <profile>
             <id>osx-x86_64-cpu</id>
             <properties>
@@ -55,6 +67,7 @@
                 <groupId>org.scalatest</groupId>
                 <artifactId>scalatest-maven-plugin</artifactId>
                 <configuration>
+                    <skipTests>${skiptest}</skipTests>
                     <argLine>
                         -Djava.library.path=${project.parent.basedir}/native/${platform}/target \
                         -Dlog4j.configuration=file://${project.basedir}/src/test/resources/log4j.properties
@@ -65,13 +78,29 @@
                 <groupId>org.scalastyle</groupId>
                 <artifactId>scalastyle-maven-plugin</artifactId>
             </plugin>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+                <version>3.3.2</version>
+                <configuration>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>doc-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
     <dependencies>
         <dependency>
             <groupId>org.apache.mxnet</groupId>
             <artifactId>mxnet-core_${scala.binary.version}</artifactId>
-            <version>1.2.0-SNAPSHOT</version>
+            <version>1.3.0-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.mockito/mockito-all -->

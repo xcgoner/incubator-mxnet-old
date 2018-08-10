@@ -37,9 +37,15 @@
 # choice of compiler
 #--------------------
 
-export CC = mpicc
-export CXX = mpiCC
+ifndef CC
+export CC = gcc
+endif
+ifndef CXX
+export CXX = g++
+endif
+ifndef NVCC
 export NVCC = nvcc
+endif
 
 # whether compile with options for MXNet developer
 DEV = 0
@@ -151,15 +157,6 @@ USE_F16C =
 
 # whether or not to enable multi-machine supporting
 USE_DIST_KVSTORE = 1
-
-# whether or not to enable kvstore with type dist_sync_allreduce
-USE_ALLREDUCE_DIST_KVSTORE = 1
-
-# mpi library root directory, mpi_collectives will depend
-# upon $(MPI_ROOT)/include $(MPI_ROOT)/lib, user need to
-# set this path, otherwise we will use default mpi (mpich).
-MPI_ROOT = /usr/local/mpi
-# MPI_ROOT = 
 
 # whether or not allow to read and write HDFS directly. If yes, then hadoop is
 # required
