@@ -708,6 +708,10 @@ class CommDevice : public Comm {
     inited_ = true;
   }
 
+  BufferEntry& GetMergeBuf(int key) {
+    return merge_buf_[key];
+  }
+
  private:
   void EnableP2P(const std::vector<Context>& devs) {
 #if MXNET_USE_CUDA
@@ -784,10 +788,6 @@ class CommDevice : public Comm {
     /// \brief the sparse merged value for reduce and rowsparse broadcast operations
     NDArray sparse_merged;
   };
-
-  BufferEntry& GetMergeBuf(int key) {
-    return merge_buf_[key];
-  }
 
   std::unordered_map<int, BufferEntry> merge_buf_;
 
