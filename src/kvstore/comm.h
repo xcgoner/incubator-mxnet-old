@@ -709,7 +709,7 @@ class CommDevice : public Comm {
   }
 
  private:
-  void EnableP2P(const std::vector<Context>& devs) {
+  virtual void EnableP2P(const std::vector<Context>& devs) {
 #if MXNET_USE_CUDA
     std::vector<int> gpus;
     for (const auto& d : devs) {
