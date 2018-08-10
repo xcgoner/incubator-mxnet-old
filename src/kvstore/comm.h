@@ -708,10 +708,6 @@ class CommDevice : public Comm {
     inited_ = true;
   }
 
-  BufferEntry& GetMergeBuf(int key) {
-    return merge_buf_[key];
-  }
-
  private:
   void EnableP2P(const std::vector<Context>& devs) {
 #if MXNET_USE_CUDA
@@ -792,6 +788,11 @@ class CommDevice : public Comm {
   std::unordered_map<int, BufferEntry> merge_buf_;
 
  public:
+
+  BufferEntry& GetMergeBuf(int key) {
+    return merge_buf_[key];
+  }
+
   bool inited_;
   std::vector<KeyAttrs> sorted_key_attrs_;
 };
