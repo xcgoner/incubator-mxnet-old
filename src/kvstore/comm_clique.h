@@ -268,7 +268,7 @@ class CommDeviceClique : public CommDevice {
     }
   }
 
-  void EnableP2P(const std::vector<Context>& devs) override {
+  void EnableP2P(const std::vector<Context>& devs) {
 #if MXNET_USE_CUDA
     std::vector<int> gpus;
     for (const auto& d : devs) {
