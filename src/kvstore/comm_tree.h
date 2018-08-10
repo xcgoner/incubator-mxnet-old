@@ -451,15 +451,9 @@ class CommDeviceTree : public CommDevice {
           TShape shape_copy = shape;
           int total_size = shape.Size();
           unsigned first_size = shape[0];
-<<<<<<< HEAD
-          if (total_size > gpuarray_bound_ && first_size >= devs_.size()) {
-            // Find slice bounds
-            int slice_size = (first_size+devs_.size()-1)/devs_.size();
-=======
           if (total_size > gpuarray_bound_ && first_size >= 2*devs_.size()) {
             // Find slice bounds
             int slice_size = first_size/devs_.size();
->>>>>>> 584c5c184be3073f2f2fad6dafe4689a625d676a
             int last_slice = first_size-(devs_.size()-1)*slice_size;
             shape_copy[0]   = slice_size;
             buf.merged.resize(devs_.size());

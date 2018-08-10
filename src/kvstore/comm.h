@@ -784,54 +784,7 @@ class CommDevice : public Comm {
     /// \brief the sparse merged value for reduce and rowsparse broadcast operations
     NDArray sparse_merged;
   };
-
-  BufferEntry& GetMergeBuf(int key) {
-    return merge_buf_[key];
-  }
-
- private:
-  virtual void EnableP2P(const std::vector<Context>& devs) {
-#if MXNET_USE_CUDA
-    std::vector<int> gpus;
-    for (const auto& d : devs) {
-      if (d.dev_mask() == gpu::kDevMask) {
-        gpus.push_back(d.dev_id);
-      }
-    }
-    int n = static_cast<int>(gpus.size());
-    int enabled = 0;
-    std::vector<int> p2p(n*n);
-    for (int i = 0; i < n; ++i) {
-      cudaSetDevice(gpus[i]);
-      for (int j = 0; j < n; j++) {
-        int access;
-        cudaDeviceCanAccessPeer(&access, gpus[i], gpus[j]);
-        if (access) {
-          cudaError_t e = cudaDeviceEnablePeerAccess(gpus[j], 0);
-          if (e == cudaSuccess || e == cudaErrorPeerAccessAlreadyEnabled) {
-            ++enabled;
-            p2p[i*n+j] = 1;
-          }
-        }
-      }
-    }
-    if (enabled != n*(n-1)) {
-      // print warning info if not fully enabled
-      LOG(WARNING) << "only " << enabled <<  " out of "
-                   << n*(n-1) << " GPU pairs are enabled direct access. "
-                   << "It may affect the performance. "
-                   << "You can set MXNET_ENABLE_GPU_P2P=0 to turn it off";
-      std::string access(n, '.');
-      for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < n; ++j) {
-          access[j] = p2p[i*n+j] ? 'v' : '.';
-        }
-        LOG(WARNING) << access;
-      }
-    }
-#endif
-  }
-
+  
   std::unordered_map<int, BufferEntry> merge_buf_;
 
  public:

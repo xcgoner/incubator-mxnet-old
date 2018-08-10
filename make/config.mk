@@ -156,7 +156,7 @@ USE_F16C =
 #----------------------------
 
 # whether or not to enable multi-machine supporting
-USE_DIST_KVSTORE = 1
+USE_DIST_KVSTORE = 0
 
 # whether or not allow to read and write HDFS directly. If yes, then hadoop is
 # required
