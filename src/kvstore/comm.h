@@ -784,7 +784,6 @@ class CommDevice : public Comm {
     /// \brief the sparse merged value for reduce and rowsparse broadcast operations
     NDArray sparse_merged;
   };
-  
   std::unordered_map<int, BufferEntry> merge_buf_;
 
  public:
