@@ -16,7 +16,7 @@
 # under the License.
 
 # coding: utf-8
-# pylint: disable=
+# pylint: disable=ungrouped-imports
 """Dataset generator."""
 __all__ = ['DataLoader']
 
@@ -26,6 +26,7 @@ import sys
 import multiprocessing
 import multiprocessing.queues
 from multiprocessing.reduction import ForkingPickler
+import threading
 import numpy as np
 
 try:
@@ -148,6 +149,13 @@ def default_mp_batchify_fn(data):
         return nd.array(data, dtype=data.dtype,
                         ctx=context.Context('cpu_shared', 0))
 
+def _as_in_context(data, ctx):
+    """Move data into new context."""
+    if isinstance(data, nd.NDArray):
+        return data.as_in_context(ctx)
+    elif isinstance(data, (list, tuple)):
+        return [_as_in_context(d, ctx) for d in data]
+    return data
 
 def worker_loop(dataset, key_queue, data_queue, batchify_fn, slice_start, slice_end):
     """Worker loop for multiprocessing DataLoader."""
@@ -162,9 +170,21 @@ def worker_loop(dataset, key_queue, data_queue, batchify_fn, slice_start, slice_
             batch = batchify_fn([dataset[i] for i in samples[slice_start:slice_end]])
         data_queue.put((idx, batch))
 
+def fetcher_loop(data_queue, data_buffer, pin_memory=False):
+    """Fetcher loop for fetching data from queue and put in reorder dict."""
+    while True:
+        idx, batch = data_queue.get()
+        if idx is None:
+            break
+        if pin_memory:
+            batch = _as_in_context(batch, context.cpu_pinned())
+        else:
+            batch = _as_in_context(batch, context.cpu())
+        data_buffer[idx] = batch
+
 class _MultiWorkerIter(object):
     """Interal multi-worker iterator for DataLoader."""
-    def __init__(self, num_workers, dataset, batchify_fn, batch_sampler, slice_start, slice_end):
+    def __init__(self, num_workers, dataset, batchify_fn, batch_sampler, slice_start, slice_end, pin_memory=False):
         assert num_workers > 0, "_MultiWorkerIter is not for {} workers".format(num_workers)
         self._num_workers = num_workers
         self._dataset = dataset
@@ -186,6 +206,12 @@ class _MultiWorkerIter(object):
             worker.daemon = True
             worker.start()
             workers.append(worker)
+
+        self._fetcher = threading.Thread(
+            target=fetcher_loop,
+            args=(self._data_queue, self._data_buffer, pin_memory))
+        self._fetcher.daemon = True
+        self._fetcher.start()
 
         # pre-fetch
         for _ in range(2 * self._num_workers):
@@ -213,13 +239,11 @@ class _MultiWorkerIter(object):
             raise StopIteration
 
         while True:
-            self._push_next()
             if self._rcvd_idx in self._data_buffer:
                 batch = self._data_buffer.pop(self._rcvd_idx)
                 self._rcvd_idx += 1
+                self._push_next()
                 return batch
-            idx, batch = self._data_queue.get()
-            self._data_buffer[idx] = batch
 
     def next(self):
         return self.__next__()
@@ -232,11 +256,7 @@ class _MultiWorkerIter(object):
         if not self._shutdown:
             for _ in range(self._num_workers):
                 self._key_queue.put((None, None))
-            try:
-                while not self._data_queue.empty():
-                    self._data_queue.get()
-            except IOError:
-                pass
+            self._data_queue.put((None, None))
             self._shutdown = True
 
 
@@ -285,11 +305,16 @@ class DataLoader(object):
     kvstore : str or KVStore
         kvstore type for multi-gpu and distributed training. See help on
         :any:`mxnet.kvstore.create` for more information.
+    pin_memory : boolean, default False
+        If ``True``, the dataloader will copy NDArrays into pinned memory
+        before returning them. Copying from CPU pinned memory to GPU is faster
+        than from normal CPU memory.
     """
     def __init__(self, dataset, batch_size=None, shuffle=False, sampler=None,
                  last_batch=None, batch_sampler=None, batchify_fn=None,
-                 num_workers=0, kvstore=None):
+                 num_workers=0, kvstore=None, pin_memory=False):
         self._dataset = dataset
+        self._pin_memory = pin_memory
 
         if kvstore is None or isinstance(kvstore, str):
             self._slice_start = 0
@@ -329,15 +354,20 @@ class DataLoader(object):
             self._batchify_fn = batchify_fn
 
     def __iter__(self):
-        if self._num_workers <= 1:
-            generator = lambda: [(yield self._batchify_fn([self._dataset[idx] for idx in batch[self._slice_start:self._slice_end]]))
-                                 for batch in self._batch_sampler]
-            return generator()
+        if self._num_workers == 0:
+            def same_process_iter():
+                for batch in self._batch_sampler:
+                    ret = self._batchify_fn([self._dataset[idx] for idx in batch[self._slice_start:self._slice_end]])
+                    if self._pin_memory:
+                        ret = _as_in_context(ret, context.cpu_pinned())
+                    yield ret
+            return same_process_iter()
 
         # multi-worker
         return _MultiWorkerIter(self._num_workers, self._dataset,
+                                self._batchify_fn, self._batch_sampler, 
                                 self._batchify_fn, self._batch_sampler,
-                                self._slice_start, self._slice_end)
+                                self._pin_memory)
 
     def __len__(self):
         return len(self._batch_sampler)

@@ -41,6 +41,22 @@
 
 namespace mxnet {
 namespace kvstore {
+/*!
+ * \brief Splits a string into smaller strings using char as delimiter
+ * Example: "a,b,c,,d" is split into ["a","b","c","","d"]
+ * \param s string to split
+ * \param delim char to split string around
+ * \param result container for tokens extracted after splitting
+ */
+template<typename Out>
+void split(const std::string &s, const char delim, Out result) {
+  std::stringstream ss;
+  ss.str(s);
+  std::string item;
+  while (std::getline(ss, item, delim)) {
+    *(result++) = item;
+  }
+}
 
 enum KeyType {
   kUndefinedKey = -1,
@@ -65,10 +81,12 @@ class KVStoreLocal : public KVStore {
       LOG(INFO) << type_name << ": using CommDevice";
     } 
     else if (has("tree")) {
+      // use '--kv-store tree' , or '--kv-store dist_sync_tree'
       comm_ = new CommDeviceTree();
       LOG(INFO) << type_name << ": using CommDeviceTree";
     }
     else if (has("clique")) {
+      // use '--kv-store clique' , or '--kv-store dist_sync_clique'
       bool is_dist = false;
       if (has("dist")) is_dist = true;
       comm_ = new CommDeviceClique(is_dist);
