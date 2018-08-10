@@ -618,7 +618,7 @@ class Block(object):
                 params = 0
                 summary[m_key]['trainable'] = 0
                 summary[m_key]['shared'] = 0
-                for p in block._reg_params.values():
+                for p in block.params.values():
                     params += p.data().size
                     summary[m_key]['trainable'] += 0 if p.grad_req == 'null' else p.data().size
                     if p in seen:
@@ -656,10 +656,12 @@ class Block(object):
                 trainable_params += summary[layer]['trainable']
                 shared_params += summary[layer]['shared']
             print('='*80)
-            print('Total params: ' + str(total_params))
-            print('Trainable params: ' + str(trainable_params))
-            print('Non-trainable params: ' + str(total_params - trainable_params))
-            print('Shared params: ' + str(shared_params))
+            print('Parameters in forward computation graph, duplicate included')
+            print('   Total params: ' + str(total_params))
+            print('   Trainable params: ' + str(trainable_params))
+            print('   Non-trainable params: ' + str(total_params - trainable_params))
+            print('Shared params in forward computation graph: ' + str(shared_params))
+            print('Unique parameters in model: ' + str(total_params - shared_params))
             print('-'*80)
         finally:
             for h in hooks:

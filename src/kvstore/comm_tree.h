@@ -51,9 +51,9 @@ class CommDeviceTree : public CommDevice {
  public:
   CommDeviceTree() {
     inited_ = false;
-    gpuarray_bound_ = dmlc::GetEnv("MXNET_KVSTORE_GPUARRAY_BOUND", 10000000);
-    backtrack_ = dmlc::GetEnv("MXNET_KVSTORE_BACKTRACK", 0);
-    link_usage_penalty_ = dmlc::GetEnv("MXNET_KVSTORE_LINK_USAGE_PENALTY", 0.7);
+    gpuarray_bound_ = dmlc::GetEnv("MXNET_KVSTORE_TREE_ARRAY_BOUND", 10000000);
+    backtrack_ = dmlc::GetEnv("MXNET_KVSTORE_TREE_BACKTRACK", 0);
+    link_usage_penalty_ = dmlc::GetEnv("MXNET_KVSTORE_TREE_LINK_USAGE_PENALTY", 0.7);
   }
 
   virtual ~CommDeviceTree() { }
@@ -83,9 +83,14 @@ class CommDeviceTree : public CommDevice {
     }
   }
 
-  // src is sliced shape
-  // copy_buf not sliced
-  // merged not sliced
+  /**
+   * \brief Reduce src to tree_merge_buf_
+   * \param key is the id of the gradient we are doing Reduce on
+   * \param src is the array of values located on different GPUs
+   * \param root is the id of the GPU we want to send result of reduce to
+   * \param merged_row is the id of the slice we are taking
+   * \param priority the priority of the operation
+   */
   const NDArray& ReduceInner(int key, const std::vector<NDArray>& src, int root,
                              int merged_row, int priority) {
     std::vector<std::vector<NDArray>> reduce(devs_.size());
@@ -98,8 +103,8 @@ class CommDeviceTree : public CommDevice {
     if (stype == kDefaultStorage) {
       // Copy everything into buf.merged for each gpu
       for (size_t i = 0; i < src.size(); ++i) {
-        int start = scan_[root][depth_  ];
-        int end   = scan_[root][depth_+1];
+        int start = scan_[root][depth_];
+        int end = scan_[root][depth_+1];
 
         for (int j = start; j < end; ++j) {
           int topo_id = topology[j];
@@ -113,24 +118,26 @@ class CommDeviceTree : public CommDevice {
 
       for (int level = depth_; level > 0; --level) {
         int start = scan_[root][level  ];
-        int end   = scan_[root][level+1];
+        int end = scan_[root][level+1];
 
         unsigned is_dest = 0;
-        int      dest_id = 0;
+        int dest_id = 0;
         for (int j = start; j < end; ++j) {
           int topo_id = topology[j];
-          dest_id     = (is_dest == 0) ? topo_id : dest_id;
+          dest_id = (is_dest == 0) ? topo_id : dest_id;
 
           TreeBufferEntry& buf_dest = tree_merge_buf_[dest_id][key];
           TreeBufferEntry& buf_from = tree_merge_buf_[topo_id][key];
 
           if (!is_dest) {
-            reduce[dest_id].push_back(buf_dest.merged[merged_row]);
+            if (reduce[dest_id].size() == 0) {
+              reduce[dest_id].push_back(buf_dest.merged[merged_row]);
+            }
           } else {
             if (dest_id != topo_id) {
               CopyFromTo(buf_from.merged[merged_row],
-                  &(buf_dest.copy_buf[merged_row][is_dest-1]),
-                  priority);
+                         &(buf_dest.copy_buf[merged_row][is_dest-1]),
+                         priority);
               reduce[dest_id].push_back(
                   buf_dest.copy_buf[merged_row][is_dest-1]);
             }
@@ -141,12 +148,18 @@ class CommDeviceTree : public CommDevice {
         }
 
         start = scan_[root][level-1];
-        end   = scan_[root][level  ];
+        end = scan_[root][level];
+        int source = end;
         for (int i = start; i < end; ++i) {
           int gpu_id = topology[i];
 
+          // source keeps track of 2 leaf nodes, while start keeps track of parent
+          int dest_id = topology[source];
+          int from_id = topology[source+1];
+          source += 2;
+
           // conditional to detect whether operation must be done
-          if (reduce[gpu_id].size() > 1) {
+          if (reduce[gpu_id].size() > 1 && dest_id != from_id) {
             TreeBufferEntry& buf = tree_merge_buf_[gpu_id][key];
             ElementwiseSum(reduce[gpu_id], &(buf.merged[merged_row]), priority);
           }
@@ -158,7 +171,7 @@ class CommDeviceTree : public CommDevice {
         }
       }
     } else {
-      LOG(WARNING) << "Only dense input supported for now";
+      LOG(FATAL) << "Only dense input supported for now";
     }
 
     int topo_id = topology[0];
@@ -191,10 +204,10 @@ class CommDeviceTree : public CommDevice {
     const NDArrayStorageType stype = src[0].storage_type();
     // normal dense reduce
     if (stype == kDefaultStorage) {
-      if (total_size > gpuarray_bound_ && first_size >= devs_.size()) {
+      if (total_size > gpuarray_bound_ && first_size >= 2*devs_.size()) {
         // Find slice bounds
         slice_scan[0] = 0;
-        int slice_size = (first_size + devs_.size()-1)/devs_.size();
+        int slice_size = first_size/devs_.size();
         for (unsigned i = 1; i < devs_.size(); ++i) {
           slice_scan[i] = slice_scan[i-1] + slice_size;
         }
@@ -231,7 +244,7 @@ class CommDeviceTree : public CommDevice {
       }
 
       // Copy from list of small NDArrays to one big NDArray, which is returned
-      int gpu_id    = 0;
+      int gpu_id = 0;
       return src[gpu_id];
     } else {
       // sparse reduce
@@ -252,13 +265,13 @@ class CommDeviceTree : public CommDevice {
 
     for (int level = 1; level <= depth_; ++level) {
       int start = scan_[root][level];
-      int end   = scan_[root][level+1];
+      int end = scan_[root][level+1];
 
       unsigned is_src = 0;
-      int      src_id = 0;
+      int src_id = 0;
       for (int j = start; j < end; ++j) {
         int topo_id = topology[j];
-        src_id      = (is_src == 0) ? topo_id : src_id;
+        src_id = (is_src == 0) ? topo_id : src_id;
 
         if (is_src && src_id != topo_id) {
           CopyFromTo(temp[src_id], dst[topo_id], priority);
@@ -288,10 +301,13 @@ class CommDeviceTree : public CommDevice {
     } else {
       int total_size = src.shape().Size();
       unsigned first_size = src.shape()[0];
-      if (total_size > gpuarray_bound_ && first_size >= devs_.size()) {
+      const NDArrayStorageType stype = src.storage_type();
+      // normal dense reduce
+      if (stype == kDefaultStorage) {
+      if (total_size > gpuarray_bound_ && first_size >= 2*devs_.size()) {
         std::vector<int> slice_scan(devs_.size()+1);
         slice_scan[0] = 0;
-        int slice_size = (dst[0]->shape()[0]+devs_.size()-1)/devs_.size();
+        int slice_size = (dst[0]->shape()[0])/devs_.size();
         for (unsigned i = 1; i < devs_.size(); ++i) {
           slice_scan[i] = slice_scan[i-1] + slice_size;
         }
@@ -309,6 +325,8 @@ class CommDeviceTree : public CommDevice {
       } else {
         int root = 0;
         BroadcastInner(key, src, dst, root, -1, priority);
+      }} else {
+        LOG(FATAL) << "Only dense input supported for now";
       }
     }
   }
@@ -361,9 +379,9 @@ class CommDeviceTree : public CommDevice {
     std::vector<float> link_matrix(devs_.size()*devs_.size());
     GetP2PWeight(devs_, &link_matrix);
     if (backtrack_)
-      LOG(WARNING) << "Using Backtracking to generate trees";
+      LOG(INFO) << "Using Backtracking to generate trees";
     else
-      LOG(WARNING) << "Using Kernighan-Lin to generate trees";
+      LOG(INFO) << "Using Kernighan-Lin to generate trees";
     ComputeTrees(link_matrix, devs_.size(), link_usage_penalty_, backtrack_,
         &topology_, &scan_);
 
@@ -374,7 +392,7 @@ class CommDeviceTree : public CommDevice {
   using KeyAttrs = std::tuple<int, TShape, int>;
   // try to allocate buff on device evenly
   void InitMergeBufferTree() {
-    LOG(WARNING) << "Using Tree";
+    LOG(INFO) << "Using Tree";
 
     // same as all-reduce, except:
     // 1) Allocate copy_buf here instead of in Reduce()
@@ -396,17 +414,33 @@ class CommDeviceTree : public CommDevice {
       else
         key_dist[shape.Size()]++;
 
-      int start = scan_[0][depth_  ];
-      int end   = scan_[0][depth_+1];
+      int start = scan_[0][depth_];
+      int end = scan_[0][depth_+1];
 
-      // In order to generalize to any number of GPUs, we use strategy of having
-      // found the mapping from 0, 1, ..., n_gpus to dev_id i.e.
+      // In order to generalize to any number of GPUs in arbitrary order, we use
+      // strategy of having found the mapping from 0, 1, ..., n_gpus to dev_id.
+      // For example, if the user wants to use --gpus 4,2,3,1,7,5,0, they can do      // so:
+      //
       //   idx:    0 1 2 3 4 5 6
       //   dev_id: 4 2 3 1 7 5 0
-      // and generated an n_gpus x n_gpus link topology matrix:
       //
-      // 1) The reduction trees are saved as indices on 0, 1, ..., n_gpus
-      // 2) We use the mapping to retrieve dev_id and device context
+      // From this, we:
+      // 1) generate a link topology matrix with dimensions n_gpus x n_gpus
+      //    (link_matrix)
+      //
+      // 2) the reduction trees are saved as indices from 0, 1, ..., n_gpus
+      //    in a vector of vectors (topology_):
+      //
+      //    index  | topology_[index]
+      //    -------------------------
+      //    0      | [Tree 0]
+      //    1      | [Tree 1]
+      //           .
+      //           .
+      //           .
+      //    n_gpus | [Tree n_gpus]
+      //
+      // 3) We use the mapping (devs_) to retrieve dev_id and device context
       for (int j = start; j < end; ++j) {
         int topo_id = topology_[0][j];
         auto& buf = tree_merge_buf_[topo_id][key];
@@ -417,9 +451,15 @@ class CommDeviceTree : public CommDevice {
           TShape shape_copy = shape;
           int total_size = shape.Size();
           unsigned first_size = shape[0];
+<<<<<<< HEAD
           if (total_size > gpuarray_bound_ && first_size >= devs_.size()) {
             // Find slice bounds
             int slice_size = (first_size+devs_.size()-1)/devs_.size();
+=======
+          if (total_size > gpuarray_bound_ && first_size >= 2*devs_.size()) {
+            // Find slice bounds
+            int slice_size = first_size/devs_.size();
+>>>>>>> 584c5c184be3073f2f2fad6dafe4689a625d676a
             int last_slice = first_size-(devs_.size()-1)*slice_size;
             shape_copy[0]   = slice_size;
             buf.merged.resize(devs_.size());
@@ -455,7 +495,7 @@ class CommDeviceTree : public CommDevice {
     }
 
     for (auto it = key_dist.begin(); it != key_dist.end(); ++it) {
-      LOG(WARNING) << "Size " << it->first << " occurs " << it->second << " times";
+      LOG(INFO) << "Size " << it->first << " occurs " << it->second << " times";
     }
     inited_ = true;
   }
@@ -487,11 +527,9 @@ class CommDeviceTree : public CommDevice {
   std::vector<std::vector<size_t>> scan_;
   std::vector<Context> devs_;
 
-  /// \brief Highest numbered device
-  int   max_dev_;
-  int   depth_;
-  int   gpuarray_bound_;
-  bool  backtrack_;
+  int depth_;
+  int gpuarray_bound_;
+  bool backtrack_;
   float link_usage_penalty_;
 
   /// \brief constant for maximum size of recv buffer per GPU
