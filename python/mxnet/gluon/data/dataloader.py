@@ -366,7 +366,7 @@ class DataLoader(object):
         # multi-worker
         return _MultiWorkerIter(self._num_workers, self._dataset,
                                 self._batchify_fn, self._batch_sampler, 
-                                self._batchify_fn, self._batch_sampler,
+                                self._slice_start, self._slice_end,
                                 self._pin_memory)
 
     def __len__(self):
