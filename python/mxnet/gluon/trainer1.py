@@ -70,7 +70,7 @@ class Trainer(object):
         optimizer, its learning rate can be accessed as optimizer.learning_rate.
     """
     def __init__(self, params, optimizer, optimizer_params=None, kvstore='device',
-                 compression_params=None, update_on_kvstore=None, local_sgd=None, local_sgd_regularization=0):
+                 compression_params=None, update_on_kvstore=None):
         if isinstance(params, (dict, ParameterDict)):
             params = list(params.values())
         if not isinstance(params, (list, tuple)):
@@ -99,22 +99,13 @@ class Trainer(object):
         optimizer_params = optimizer_params if optimizer_params else {}
         self._init_optimizer(optimizer, optimizer_params)
         self._scale = self._optimizer.rescale_grad
-        if local_sgd is None or local_sgd <= 1:
-            self._local_sgd = 1
-        else:
-            self._local_sgd = local_sgd
-            self._local_sgd_counter = 0
-            update_on_kvstore = False
-            self._local_sgd_regularization = local_sgd_regularization
         self._kvstore_params = {'kvstore': kvstore, 'update_on_kvstore': update_on_kvstore}
         self._kv_initialized = False
         self._kvstore = None
-        # self._update_on_kvstore = update_on_kvstore
         self._update_on_kvstore = None
         self._distributed = None
         self._params_to_init = []
         self._reset_kvstore()
-
 
     def _check_contexts(self):
         contexts = None
@@ -233,7 +224,6 @@ class Trainer(object):
                                                          arg_arrays)
             self._distributed = 'dist' in kvstore.type if kvstore else False
             if self._distributed and 'async' in kvstore.type:
-                # TODO: asynchronous local sgd
                 update_on_kvstore = True
                 # raise err if user provides unsupported configs
                 if config['update_on_kvstore'] is False:
@@ -338,36 +328,8 @@ class Trainer(object):
         if self._params_to_init:
             self._init_params()
 
-        if self._local_sgd == 1:
-            # if not local sgd
-            self._allreduce_grads()
-        # self._allreduce_grads()
-
-        if self._local_sgd > 1 and self._local_sgd_counter == 0 and self._local_sgd_regularization > 0:
-            # regularization for local sgd
-            self._local_sgd_regularization_params = []
-            for i, param in enumerate(self._params):
-                if param.grad_req != 'null' and param._stype == 'default':
-                    self._local_sgd_regularization_params.append([x.copy() for x in param.list_data()])
-
+        self._allreduce_grads()
         self._update(ignore_stale_grad)
-
-        if self._local_sgd > 1 and self._local_sgd_regularization > 0:
-            # regularization for local sgd
-            for i, param in enumerate(self._params):
-                if param.grad_req != 'null' and param._stype == 'default':
-                    for j, data in enumerate(param.list_data()):
-                        data[:] = self._local_sgd_regularization * self._local_sgd_regularization_params[i][j] + (1 - self._local_sgd_regularization) * data
-
-        if self._local_sgd > 1:
-            # local sgd
-            self._local_sgd_counter += 1
-            if self._local_sgd_counter == self._local_sgd:
-                self._local_sgd_counter = 0
-                # synchronization
-                self._allreduce_params()
-
-
 
     def allreduce_grads(self):
         """For each parameter, reduce the gradients from different contexts.
@@ -400,40 +362,6 @@ class Trainer(object):
                     if not self._update_on_kvstore:
                         self._kvstore.pull(i, param.list_grad(), priority=-i,
                                            ignore_sparse=self._distributed)
-    
-    def allreduce_params(self):
-        """For each parameter, reduce the gradients from different contexts.
-
-        Should be called after `autograd.backward()`, outside of `record()` scope,
-        and before `trainer.update()`.
-
-        For normal parameter updates, `step()` should be used, which internally calls
-        `allreduce_grads()` and then `update()`. However, if you need to get the reduced
-        gradients to perform certain transformation, such as in gradient clipping, then
-        you may want to manually call `allreduce_grads()` and `update()` separately.
-        """
-        if not self._kv_initialized:
-            self._init_kvstore()
-        if self._params_to_init:
-            self._init_params()
-        
-        self._allreduce_params()
-
-    def _allreduce_params(self):
-        if self._kvstore:
-            for i, param in enumerate(self._params):
-                if param.grad_req != 'null':
-                    self._kvstore.push(i, param.list_data(), priority=-i)
-                    if param._stype == 'default':
-                        self._kvstore.pull(i, param.list_data(), priority=-i)
-                        # take average
-                        # assume that every worker has the same number of gpus/contexts
-                        num_workers = self._kvstore.num_workers * len(param.list_data())
-                        for data in param.list_data():
-                            data[:] = data / num_workers
-                    else:
-                        raise ValueError("Cannot pull row_sparse parameters for local SGD")
-
 
     def update(self, batch_size, ignore_stale_grad=False):
         """Makes one step of parameter update.
@@ -504,7 +432,6 @@ class Trainer(object):
                 if upd:
                     i, w, g = zip(*upd)
                     updater(i, w, g)
-                    # TODO: local sgd, regularization
 
     def save_states(self, fname):
         """Saves trainer states (e.g. optimizer, momentum) to a file.
