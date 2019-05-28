@@ -70,7 +70,7 @@ class Trainer(object):
         optimizer, its learning rate can be accessed as optimizer.learning_rate.
     """
     def __init__(self, params, optimizer, optimizer_params=None, kvstore='device',
-                 compression_params=None, update_on_kvstore=None, local_sgd=None, local_sgd_regularization=0):
+                 compression_params=None, update_on_kvstore=None, local_sgd=None, local_sgd_regularization=0, local_sgd_regularization_interval=0):
         if isinstance(params, (dict, ParameterDict)):
             params = list(params.values())
         if not isinstance(params, (list, tuple)):
@@ -92,8 +92,10 @@ class Trainer(object):
             param._set_trainer(self)
             if param._stype != 'default':
                 self._contains_sparse_weight = True
+                # raise ValueError("Containing sparse weight")
             if param._grad_stype != 'default':
                 self._contains_sparse_grad = True
+                # raise ValueError("Containing sparse gradient")
         self._compression_params = compression_params
         self._contexts = self._check_contexts()
         optimizer_params = optimizer_params if optimizer_params else {}
@@ -106,6 +108,8 @@ class Trainer(object):
             self._local_sgd_counter = 0
             update_on_kvstore = False
             self._local_sgd_regularization = local_sgd_regularization
+            self._local_sgd_regularization_interval = local_sgd_regularization_interval
+            self._local_sgd_regularization_counter = 0
         self._kvstore_params = {'kvstore': kvstore, 'update_on_kvstore': update_on_kvstore}
         self._kv_initialized = False
         self._kvstore = None
@@ -348,16 +352,22 @@ class Trainer(object):
             self._local_sgd_regularization_params = []
             for i, param in enumerate(self._params):
                 if param.grad_req != 'null' and param._stype == 'default':
-                    self._local_sgd_regularization_params.append([x.copy() for x in param.list_data()])
+                    self._local_sgd_regularization_params.append([self._local_sgd_regularization * x.copy() for x in param.list_data()])
+                else:
+                    self._local_sgd_regularization_params.append([])
 
         self._update(ignore_stale_grad)
 
         if self._local_sgd > 1 and self._local_sgd_regularization > 0:
             # regularization for local sgd
-            for i, param in enumerate(self._params):
-                if param.grad_req != 'null' and param._stype == 'default':
-                    for j, data in enumerate(param.list_data()):
-                        data[:] = self._local_sgd_regularization * self._local_sgd_regularization_params[i][j] + (1 - self._local_sgd_regularization) * data
+            mixing_weight = (1 - self._local_sgd_regularization)
+            self._local_sgd_regularization_counter += 1
+            if self._local_sgd_regularization_interval == 0 or self._local_sgd_regularization_interval == self._local_sgd_regularization_counter:
+                self._local_sgd_regularization_counter = 0
+                for i, param in enumerate(self._params):
+                    if param.grad_req != 'null' and param._stype == 'default':
+                        for j, data in enumerate(param.list_data()):
+                            data[:] = self._local_sgd_regularization_params[i][j] + mixing_weight * data
 
         if self._local_sgd > 1:
             # local sgd
@@ -504,7 +514,6 @@ class Trainer(object):
                 if upd:
                     i, w, g = zip(*upd)
                     updater(i, w, g)
-                    # TODO: local sgd, regularization
 
     def save_states(self, fname):
         """Saves trainer states (e.g. optimizer, momentum) to a file.
