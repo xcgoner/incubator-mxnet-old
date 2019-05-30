@@ -110,6 +110,7 @@ class Trainer(object):
             self._local_sgd_regularization = local_sgd_regularization
             self._local_sgd_regularization_interval = local_sgd_regularization_interval
             self._local_sgd_regularization_counter = 0
+            self._is_states_initialized = False
         self._kvstore_params = {'kvstore': kvstore, 'update_on_kvstore': update_on_kvstore}
         self._kv_initialized = False
         self._kvstore = None
@@ -169,6 +170,24 @@ class Trainer(object):
 
         self._params_to_init = params_to_init
 
+    def init_states(self):
+        """Initialize states (momentum) in the KVStore, for local sgd
+        """
+        assert self._kv_initialized, "Cannot initialize states in KVStore " \
+                                     "when KVStore is not initialized."
+        if self._kvstore and self._is_states_initialized == False:
+            for i, param in enumerate(self._params):
+                if param.grad_req != 'null':
+                    if isinstance(self._updaters[0].states[i], (tuple, list)):
+                        # for some optimizers, there are multiple states (mean, variance), such as Adam
+                        for j in range(len(self._updaters[0].states[i])):
+                            state_arrays = [updater.states[i][j] for updater in self._updaters]
+                            self._kvstore.init(i+len(self._params)*(j+1), self._updaters[0].states[i][j])
+                    else:
+                        state_arrays = [updater.states[i] for updater in self._updaters]
+                        self._kvstore.init(i+len(self._params), self._updaters[0].states[i])
+            self._is_states_initialized = True
+
     def _reset_kvstore(self):
         """Reset kvstore."""
         if self._kvstore and 'dist' in self._kvstore.type:
@@ -219,6 +238,10 @@ class Trainer(object):
             #    - push_and_update(grad)
             #    - pull(weight)
             arg_arrays = {param.name: param.data(self._contexts[0]) for param in self._params}
+            if self._local_sgd > 1:
+                # local sgd
+                state_arrays = {param.name+'_state': param.data(self._contexts[0]) for param in self._params}
+                arg_arrays.update(state_arrays)
             kvstore, _ = _create_kvstore(config['kvstore'], len(self._contexts), arg_arrays)
             self._distributed = 'dist' in kvstore.type if kvstore else False
             update_on_kvstore = self._distributed
@@ -376,6 +399,8 @@ class Trainer(object):
                 self._local_sgd_counter = 0
                 # synchronization
                 self._allreduce_params()
+                if self._is_states_initialized:
+                    self._allreduce_states()
 
 
 
@@ -443,6 +468,55 @@ class Trainer(object):
                             data[:] = data / num_workers
                     else:
                         raise ValueError("Cannot pull row_sparse parameters for local SGD")
+
+    def allreduce_states(self):
+        """For each parameter, reduce the gradients from different contexts.
+
+        Should be called after `autograd.backward()`, outside of `record()` scope,
+        and before `trainer.update()`.
+
+        For normal parameter updates, `step()` should be used, which internally calls
+        `allreduce_grads()` and then `update()`. However, if you need to get the reduced
+        gradients to perform certain transformation, such as in gradient clipping, then
+        you may want to manually call `allreduce_grads()` and `update()` separately.
+        """
+        if not self._kv_initialized:
+            self._init_kvstore()
+        
+        self._allreduce_states()
+
+    def _allreduce_states(self):
+        if self._kvstore:
+            for i, param in enumerate(self._params):
+                if param.grad_req != 'null':
+                    if isinstance(self._updaters[0].states[i], (tuple, list)):
+                        # for some optimizers, there are multiple states (mean, variance), such as Adam
+                        for j in range(len(self._updaters[0].states[i])):
+                            state_arrays = [updater.states[i][j] for updater in self._updaters]
+                            idx = i+len(self._params)*(j+1)
+                            self._kvstore.push(idx, state_arrays, priority=-i)
+                            if param._stype == 'default':
+                                self._kvstore.pull(idx, state_arrays, priority=-i)
+                                # take average
+                                # assume that every worker has the same number of gpus/contexts
+                                num_workers = self._kvstore.num_workers * len(state_arrays)
+                                for state in state_arrays:
+                                    state[:] = state / num_workers
+                            else:
+                                raise ValueError("Cannot pull row_sparse parameters for local SGD")
+                    else:
+                        state_arrays = [updater.states[i] for updater in self._updaters]
+                        idx = i+len(self._params)
+                        self._kvstore.push(idx, state_arrays, priority=-i)
+                        if param._stype == 'default':
+                            self._kvstore.pull(idx, state_arrays, priority=-i)
+                            # take average
+                            # assume that every worker has the same number of gpus/contexts
+                            num_workers = self._kvstore.num_workers * len(state_arrays)
+                            for state in state_arrays:
+                                state[:] = state / num_workers
+                        else:
+                            raise ValueError("Cannot pull row_sparse parameters for local SGD")
 
 
     def update(self, batch_size, ignore_stale_grad=False):
