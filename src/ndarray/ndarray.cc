@@ -1265,7 +1265,8 @@ void CopyFromTo(const NDArray& from, const NDArray& to, int priority, bool is_op
           ctx.get_stream<gpu>()->Wait();
           on_complete();
         }, from.ctx(), const_vars, mutable_vars,
-        from.dtype() != to.dtype() ? FnProperty::kNormal : FnProperty::kCopyFromGPU,
+        // from.dtype() != to.dtype() ? FnProperty::kNormal : (from.ctx() != to.ctx() ? FnProperty::kGPUPrioritized : FnProperty::kCopyFromGPU),
+        from.dtype() != to.dtype() ? FnProperty::kNormal : FnProperty::kGPUPrioritized,
         priority, is_opr ? "_copyto_GPU2GPU" : "CopyGPU2GPU");
     } else {
       LOG(FATAL) << "unknown device mask";

@@ -256,6 +256,10 @@ class Trainer(object):
             # Training with dense weight and dense gradients.
             # The only unsupported mode is async with update_on_kvstore=False
             arg_arrays = {param.name: param.data(self._contexts[0]) for param in self._params}
+            if self._local_sgd > 1:
+                # local sgd
+                state_arrays = {param.name+'_state': param.data(self._contexts[0]) for param in self._params}
+                arg_arrays.update(state_arrays)
             kvstore, update_on_kvstore = _create_kvstore(config['kvstore'], len(self._contexts),
                                                          arg_arrays)
             self._distributed = 'dist' in kvstore.type if kvstore else False
@@ -483,23 +487,26 @@ class Trainer(object):
         if not self._kv_initialized:
             self._init_kvstore()
         
+        if not self._is_states_initialized:
+            raise ValueError("States are not initiallized")
         self._allreduce_states()
 
     def _allreduce_states(self):
         if self._kvstore:
-            for i, param in enumerate(self._params):
+            # for i, param in enumerate(self._params):
+            for i, param in reversed(list(enumerate(self._params))):
                 if param.grad_req != 'null':
                     if isinstance(self._updaters[0].states[i], (tuple, list)):
                         # for some optimizers, there are multiple states (mean, variance), such as Adam
                         for j in range(len(self._updaters[0].states[i])):
                             state_arrays = [updater.states[i][j] for updater in self._updaters]
                             idx = i+len(self._params)*(j+1)
-                            self._kvstore.push(idx, state_arrays, priority=-i)
+                            self._kvstore.push(idx, state_arrays, priority=i-len(self._params)*2)
                             if param._stype == 'default':
-                                self._kvstore.pull(idx, state_arrays, priority=-i)
+                                self._kvstore.pull(idx, state_arrays, priority=i-len(self._params)*2)
                                 # take average
                                 # assume that every worker has the same number of gpus/contexts
-                                num_workers = self._kvstore.num_workers * len(state_arrays)
+                                num_workers = float(self._kvstore.num_workers * len(state_arrays))
                                 for state in state_arrays:
                                     state[:] = state / num_workers
                             else:
@@ -507,9 +514,9 @@ class Trainer(object):
                     else:
                         state_arrays = [updater.states[i] for updater in self._updaters]
                         idx = i+len(self._params)
-                        self._kvstore.push(idx, state_arrays, priority=-i)
+                        self._kvstore.push(idx, state_arrays, priority=i-len(self._params)*2)
                         if param._stype == 'default':
-                            self._kvstore.pull(idx, state_arrays, priority=-i)
+                            self._kvstore.pull(idx, state_arrays, priority=i-len(self._params)*2)
                             # take average
                             # assume that every worker has the same number of gpus/contexts
                             num_workers = self._kvstore.num_workers * len(state_arrays)
