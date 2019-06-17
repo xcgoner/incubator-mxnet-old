@@ -23,8 +23,8 @@
  * \brief Optimizer operators
  * \author Haibin Lin
  */
-#ifndef MXNET_OPERATOR_CONTRIB_LAMB_INL_H_
-#define MXNET_OPERATOR_CONTRIB_LAMB_INL_H_
+#ifndef MXNET_OPERATOR_CONTRIB_PRELAMB_INL_H_
+#define MXNET_OPERATOR_CONTRIB_PRELAMB_INL_H_
 #include <dmlc/parameter.h>
 #include <mxnet/operator.h>
 #include <mxnet/operator_util.h>
@@ -42,7 +42,7 @@
 namespace mxnet {
 namespace op {
 
-struct LAMBParam : public dmlc::Parameter<LAMBParam> {
+struct PreLAMBParam : public dmlc::Parameter<PreLAMBParam> {
   float lr;
   float beta1;
   float beta2;
@@ -53,9 +53,9 @@ struct LAMBParam : public dmlc::Parameter<LAMBParam> {
   float wd;
   float eta;
   float clip_gradient;
-  DMLC_DECLARE_PARAMETER(LAMBParam) {
-    DMLC_DECLARE_FIELD(lr)
-    .describe("Learning rate");
+  DMLC_DECLARE_PARAMETER(PreLAMBParam) {
+    // DMLC_DECLARE_FIELD(lr)
+    // .describe("Learning rate");
     DMLC_DECLARE_FIELD(beta1)
     .set_default(0.9f)
     .describe("The decay rate for the 1st moment estimates.");
@@ -80,8 +80,8 @@ struct LAMBParam : public dmlc::Parameter<LAMBParam> {
     .describe("Weight decay augments the objective function with a "
               "regularization term that penalizes large weights. "
               "The penalty scales with the square of the magnitude of each weight.");
-    DMLC_DECLARE_FIELD(eta)
-    .describe("Learning rate schedule multiplier");
+    // DMLC_DECLARE_FIELD(eta)
+    // .describe("Learning rate schedule multiplier");
     DMLC_DECLARE_FIELD(clip_gradient)
     .set_default(-1.0f)
     .describe("Clip gradient to the range of [-clip_gradient, clip_gradient] "
@@ -125,12 +125,15 @@ struct LAMBParam : public dmlc::Parameter<LAMBParam> {
 // }
 
 template<int req>
-struct MPLAMBKernel {
+struct MPPreLAMBKernel {
   template<typename DType>
   MSHADOW_XINLINE static void Map(int i, float* out_data, float* mean_data,
-    float* var_data, const DType* weight_data, const DType* grad_data, float* weight32,
+    float* var_data, 
+    // const DType* weight_data, 
+    const DType* grad_data, float* weight32,
     const float param_clip_gradient, const float param_beta1, const float param_beta2,
-    const float param_eta, const float param_lr, const float param_wd,
+    // const float param_eta, const float param_lr, 
+    const float param_wd,
     const float param_rescale_grad, const float param_epsilon) {
     // TODO(xcong) param_eta and param_lr are not used
     float w = weight32[i];
@@ -163,7 +166,7 @@ struct MPLAMBKernel {
 
 
 template<typename xpu>
-struct MPLAMBUpdate {
+struct MPPreLAMBUpdate {
   static inline void Forward(const nnvm::NodeAttrs& attrs,
                const OpContext &ctx,
                const std::vector<TBlob> &inputs,
@@ -172,7 +175,7 @@ struct MPLAMBUpdate {
                const float rescale_grad) {
     using namespace mxnet_op;
     if (req[0] == kNullOp) return;
-    LAMBParam param = nnvm::get<LAMBParam>(attrs.parsed);
+    PreLAMBParam param = nnvm::get<PreLAMBParam>(attrs.parsed);
     Stream<xpu>* s = ctx.get_stream<xpu>();
     if (rescale_grad == 0) {
         MSHADOW_REAL_TYPE_SWITCH(outputs[0].type_flag_, DType, {
@@ -181,28 +184,36 @@ struct MPLAMBUpdate {
         return;
     }
     MSHADOW_REAL_TYPE_SWITCH(inputs[0].type_flag_, DType, {
-      Tensor<xpu, 2, DType> weight = inputs[0].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> grad = inputs[1].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, float> mean = inputs[2].FlatTo2D<xpu, float>(s);
-      Tensor<xpu, 2, float> var = inputs[3].FlatTo2D<xpu, float>(s);
-      Tensor<xpu, 2, float> weight32 = inputs[4].FlatTo2D<xpu, float>(s);
-      // TODO(xcong) only weight32 is used, we only need weight
+      // Tensor<xpu, 2, DType> weight = inputs[0].FlatTo2D<xpu, DType>(s);
+      // Tensor<xpu, 2, DType> grad = inputs[1].FlatTo2D<xpu, DType>(s);
+      // Tensor<xpu, 2, float> mean = inputs[2].FlatTo2D<xpu, float>(s);
+      // Tensor<xpu, 2, float> var = inputs[3].FlatTo2D<xpu, float>(s);
+      // Tensor<xpu, 2, float> weight32 = inputs[4].FlatTo2D<xpu, float>(s);
+      Tensor<xpu, 2, DType> grad = inputs[0].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, float> mean = inputs[1].FlatTo2D<xpu, float>(s);
+      Tensor<xpu, 2, float> var = inputs[2].FlatTo2D<xpu, float>(s);
+      Tensor<xpu, 2, float> weight32 = inputs[3].FlatTo2D<xpu, float>(s);
+      // TODO(xcong) only weight32 is used, we don't need weight
       // output is always fp32
       Tensor<xpu, 2, float> out = outputs[0].FlatTo2D<xpu, DType>(s);
       MXNET_ASSIGN_REQ_SWITCH(req[0], req_type, {
-        Kernel<MPLAMBKernel<req_type>, xpu>::Launch(s, weight32.shape_.Size(), out.dptr_, mean.dptr_,
-          var.dptr_, weight.dptr_, grad.dptr_, weight32.dptr_, param.clip_gradient, param.beta1,
-          param.beta2, param.eta, param.lr, param.wd, rescale_grad, param.epsilon);
+        Kernel<MPPreLAMBKernel<req_type>, xpu>::Launch(s, weight32.shape_.Size(), out.dptr_, mean.dptr_,
+          var.dptr_, 
+          // weight.dptr_, 
+          grad.dptr_, weight32.dptr_, param.clip_gradient, param.beta1,
+          param.beta2, 
+          // param.eta, param.lr, 
+          param.wd, rescale_grad, param.epsilon);
       });
     });
   }
 };
 
 /*
- * \brief lamb_w update.
+ * \brief lamb update.
  */
 template<typename xpu>
-struct LAMBUpdate {
+struct PreLAMBUpdate {
   static inline void Forward(const nnvm::NodeAttrs& attrs,
                              const OpContext &ctx,
                              const std::vector<TBlob> &inputs,
@@ -212,14 +223,18 @@ struct LAMBUpdate {
     using namespace mshadow;
     using namespace mshadow::expr;
     using namespace mshadow_op;
-    const LAMBParam& param = nnvm::get<LAMBParam>(attrs.parsed);
+    const PreLAMBParam& param = nnvm::get<PreLAMBParam>(attrs.parsed);
     Stream<xpu>* s = ctx.get_stream<xpu>();
     MSHADOW_REAL_TYPE_SWITCH(inputs[0].type_flag_, DType, {
-      Tensor<xpu, 2, DType> weight = inputs[0].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> grad = inputs[1].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> mean = inputs[2].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> var = inputs[3].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> out = outputs[0].FlatTo2D<xpu, DType>(s);
+      // Tensor<xpu, 2, DType> weight = inputs[0].FlatTo2D<xpu, DType>(s);
+      // Tensor<xpu, 2, DType> grad = inputs[1].FlatTo2D<xpu, DType>(s);
+      // Tensor<xpu, 2, DType> mean = inputs[2].FlatTo2D<xpu, DType>(s);
+      // Tensor<xpu, 2, DType> var = inputs[3].FlatTo2D<xpu, DType>(s);
+      // Tensor<xpu, 2, DType> out = outputs[0].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> grad = inputs[0].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> mean = inputs[1].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> var = inputs[2].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> out = outputs[3].FlatTo2D<xpu, DType>(s);
 
       grad = scalar<DType>(rescale_grad) * grad;
       if (param.clip_gradient >= 0.0f) {

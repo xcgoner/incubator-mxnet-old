@@ -25,13 +25,13 @@
  */
 //  reuse MPUpdateInferShape and MPUpdateInferType fromadamw-inl.h
 #include "./adamw-inl.h"
-#include "./lamb.h"
+#include "./prelamb-inl.h"
 #include "../optimizer_op-inl.h"
 
 namespace mxnet {
 namespace op {
 
-DMLC_REGISTER_PARAMETER(LAMBParam);
+DMLC_REGISTER_PARAMETER(PreLAMBParam);
 
 template<template <typename xpu> class F>
 inline void MPUpdateCPU(const nnvm::NodeAttrs& attrs,
@@ -53,7 +53,7 @@ inline void MPUpdateCPU(const nnvm::NodeAttrs& attrs,
   });
 }
 
-NNVM_REGISTER_OP(_mp_lamb_update)
+NNVM_REGISTER_OP(_mp_prelamb_update)
 .describe(R"code(Update function for multi-precision AdamW optimizer.
 
 AdamW is seen as a modification of Adam by decoupling the weight decay from the
@@ -78,17 +78,17 @@ It updates the weights using::
 Note that gradient is rescaled to grad = rescale_grad * grad. If rescale_grad is NaN, Inf, or 0,
 the update is skipped.
 )code" ADD_FILELINE)
-.set_num_inputs(6)
+.set_num_inputs(5)
 .set_num_outputs(1)
-.set_attr_parser(ParamParser<LAMBParam>)
-.set_attr<mxnet::FInferShape>("FInferShape", MPUpdateInferShape<2, 1, 6>)
-.set_attr<nnvm::FInferType>("FInferType", MPUpdateInferType<2, 1, 6>)
+.set_attr_parser(ParamParser<PreLAMBParam>)
+.set_attr<mxnet::FInferShape>("FInferShape", MPUpdateInferShape<1, 1, 5>)
+.set_attr<nnvm::FInferType>("FInferType", MPUpdateInferType<1, 1, 5>)
 .set_attr<nnvm::FMutateInputs>("FMutateInputs",
   [](const nnvm::NodeAttrs& attrs) {
-    return std::vector<uint32_t>{2, 3};
+    return std::vector<uint32_t>{1, 2};
   })
-.set_attr<FCompute>("FCompute<cpu>", MPUpdateCPU<MPLAMBUpdate>)
-.add_argument("weight", "NDArray-or-Symbol", "Weight")
+.set_attr<FCompute>("FCompute<cpu>", MPUpdateCPU<MPPreLAMBUpdate>)
+// .add_argument("weight", "NDArray-or-Symbol", "Weight")
 .add_argument("grad", "NDArray-or-Symbol", "Gradient")
 .add_argument("mean", "NDArray-or-Symbol", "Moving mean")
 .add_argument("var", "NDArray-or-Symbol", "Moving variance")
@@ -96,9 +96,9 @@ the update is skipped.
 .add_argument("rescale_grad", "NDArray-or-Symbol",
               "Rescale gradient to rescale_grad * grad. If NaN, Inf, or 0, "
               "the update is skipped.")
-.add_arguments(LAMBParam::__FIELDS__());
+.add_arguments(PreLAMBParam::__FIELDS__());
 
-NNVM_REGISTER_OP(_lamb_update)
+NNVM_REGISTER_OP(_prelamb_update)
 .describe(R"code(Update function for AdamW optimizer. AdamW is seen as a modification of
 Adam by decoupling the weight decay from the optimization steps taken w.r.t. the loss function.
 
@@ -121,24 +121,24 @@ It updates the weights using::
 Note that gradient is rescaled to grad = rescale_grad * grad. If rescale_grad is NaN, Inf, or 0,
 the update is skipped.
 )code" ADD_FILELINE)
-.set_num_inputs(5)
+.set_num_inputs(4)
 .set_num_outputs(1)
-.set_attr_parser(ParamParser<LAMBParam>)
-.set_attr<mxnet::FInferShape>("FInferShape", MPUpdateInferShape<4, 1, 5>)
-.set_attr<nnvm::FInferType>("FInferType", MPUpdateInferType<4, 1, 5>)
+.set_attr_parser(ParamParser<PreLAMBParam>)
+.set_attr<mxnet::FInferShape>("FInferShape", MPUpdateInferShape<3, 1, 4>)
+.set_attr<nnvm::FInferType>("FInferType", MPUpdateInferType<3, 1, 4>)
 .set_attr<nnvm::FMutateInputs>("FMutateInputs",
   [](const nnvm::NodeAttrs& attrs) {
-    return std::vector<uint32_t>{2, 3};
+    return std::vector<uint32_t>{1, 2};
   })
-.set_attr<FCompute>("FCompute<cpu>", MPUpdateCPU<LAMBUpdate>)
-.add_argument("weight", "NDArray-or-Symbol", "Weight")
+.set_attr<FCompute>("FCompute<cpu>", MPUpdateCPU<PreLAMBUpdate>)
+// .add_argument("weight", "NDArray-or-Symbol", "Weight")
 .add_argument("grad", "NDArray-or-Symbol", "Gradient")
 .add_argument("mean", "NDArray-or-Symbol", "Moving mean")
 .add_argument("var", "NDArray-or-Symbol", "Moving variance")
 .add_argument("rescale_grad", "NDArray-or-Symbol",
               "Rescale gradient to rescale_grad * grad. If NaN, Inf, or 0, "
               "the update is skipped.")
-.add_arguments(LAMBParam::__FIELDS__());
+.add_arguments(PreLAMBParam::__FIELDS__());
 
 }  // namespace op
 }  // namespace mxnet

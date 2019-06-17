@@ -23,7 +23,7 @@
  * \brief Optimizer operators
  * \author Haibin Lin
  */
-#include "./lamb-inl.h"
+#include "./prelamb-inl.h"
 
 namespace mxnet {
 namespace op {
@@ -50,11 +50,11 @@ inline void MPUpdateGPU(const nnvm::NodeAttrs& attrs,
   });
 }
 
-NNVM_REGISTER_OP(_lamb_update)
-.set_attr<FCompute>("FCompute<gpu>", MPUpdateGPU<LAMBUpdate>);
+NNVM_REGISTER_OP(_prelamb_update)
+.set_attr<FCompute>("FCompute<gpu>", MPUpdateGPU<PreLAMBUpdate>);
 
-NNVM_REGISTER_OP(_mp_lamb_update)
-.set_attr<FCompute>("FCompute<gpu>", MPUpdateGPU<MPLAMBUpdate>);
+NNVM_REGISTER_OP(_mp_prelamb_update)
+.set_attr<FCompute>("FCompute<gpu>", MPUpdateGPU<MPPreLAMBUpdate>);
 
 }  // namespace op
 }  // namespace mxnet
