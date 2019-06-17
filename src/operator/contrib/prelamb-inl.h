@@ -195,7 +195,7 @@ struct MPPreLAMBUpdate {
       Tensor<xpu, 2, float> weight32 = inputs[3].FlatTo2D<xpu, float>(s);
       // TODO(xcong) only weight32 is used, we don't need weight
       // output is always fp32
-      Tensor<xpu, 2, float> out = outputs[0].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, float> out = outputs[0].FlatTo2D<xpu, float>(s);
       MXNET_ASSIGN_REQ_SWITCH(req[0], req_type, {
         Kernel<MPPreLAMBKernel<req_type>, xpu>::Launch(s, weight32.shape_.Size(), out.dptr_, mean.dptr_,
           var.dptr_, 
