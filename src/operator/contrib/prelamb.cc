@@ -121,17 +121,17 @@ It updates the weights using::
 Note that gradient is rescaled to grad = rescale_grad * grad. If rescale_grad is NaN, Inf, or 0,
 the update is skipped.
 )code" ADD_FILELINE)
-.set_num_inputs(4)
+.set_num_inputs(5)
 .set_num_outputs(1)
 .set_attr_parser(ParamParser<PreLAMBParam>)
-.set_attr<mxnet::FInferShape>("FInferShape", MPUpdateInferShape<3, 1, 4>)
-.set_attr<nnvm::FInferType>("FInferType", MPUpdateInferType<3, 1, 4>)
+.set_attr<mxnet::FInferShape>("FInferShape", MPUpdateInferShape<4, 1, 5>)
+.set_attr<nnvm::FInferType>("FInferType", MPUpdateInferType<4, 1, 5>)
 .set_attr<nnvm::FMutateInputs>("FMutateInputs",
   [](const nnvm::NodeAttrs& attrs) {
-    return std::vector<uint32_t>{1, 2};
+    return std::vector<uint32_t>{2, 3};
   })
 .set_attr<FCompute>("FCompute<cpu>", MPUpdateCPU<PreLAMBUpdate>)
-// .add_argument("weight", "NDArray-or-Symbol", "Weight")
+.add_argument("weight", "NDArray-or-Symbol", "Weight")
 .add_argument("grad", "NDArray-or-Symbol", "Gradient")
 .add_argument("mean", "NDArray-or-Symbol", "Moving mean")
 .add_argument("var", "NDArray-or-Symbol", "Moving variance")

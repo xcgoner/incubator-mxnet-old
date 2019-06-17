@@ -226,15 +226,11 @@ struct PreLAMBUpdate {
     const PreLAMBParam& param = nnvm::get<PreLAMBParam>(attrs.parsed);
     Stream<xpu>* s = ctx.get_stream<xpu>();
     MSHADOW_REAL_TYPE_SWITCH(inputs[0].type_flag_, DType, {
-      // Tensor<xpu, 2, DType> weight = inputs[0].FlatTo2D<xpu, DType>(s);
-      // Tensor<xpu, 2, DType> grad = inputs[1].FlatTo2D<xpu, DType>(s);
-      // Tensor<xpu, 2, DType> mean = inputs[2].FlatTo2D<xpu, DType>(s);
-      // Tensor<xpu, 2, DType> var = inputs[3].FlatTo2D<xpu, DType>(s);
-      // Tensor<xpu, 2, DType> out = outputs[0].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> grad = inputs[0].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> mean = inputs[1].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> var = inputs[2].FlatTo2D<xpu, DType>(s);
-      Tensor<xpu, 2, DType> out = outputs[3].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> weight = inputs[0].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> grad = inputs[1].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> mean = inputs[2].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> var = inputs[3].FlatTo2D<xpu, DType>(s);
+      Tensor<xpu, 2, DType> out = outputs[0].FlatTo2D<xpu, DType>(s);
 
       grad = scalar<DType>(rescale_grad) * grad;
       if (param.clip_gradient >= 0.0f) {
